@@ -1,35 +1,75 @@
+import streamlit as st
+import yfinance as yf
+from pypfopt import EfficientFrontier, risk_models, expected_returns
+import pandas as pd
 
-إعدادات المحفظة
+# إعدادات الصفحة
+st.set_page_config(page_title="Quant Analysis - SA", layout="wide")
 
-تاريخ بداية البيانات
+st.title("📊 منصة التحليل الكمي للأسهم السعودية")
+st.sidebar.header("إعدادات المحفظة")
 
-Press the down arrow key to interact with the calendar and select a date. Press the escape button to close the calendar.
+# قائمة الأسهم الجديدة (الإنماء، رسن، المطاحن العربية، مرافق)
+tickers = ['1150.SR', '8313.SR', '2285.SR', '2083.SR']
 
-Selected date is 2024/06/15. Select the second date.
+# تحديد تاريخ البداية
+start_date = st.sidebar.date_input("تاريخ بداية البيانات", value=pd.to_datetime("2024-06-15"))
 
-نصيحة تحليلية: إضافة مصرف الراجحي تعمل كـ "صمام أمان" للمحفظة بسبب استقراره العالي مقارنة بأسهم النمو الحديثة.
-📊 منصة التحليل الكمي للأسهم السعودية
-📈 أداء الأسهم المختارة (الراجحي، رسن، المطاحن)
-JulyAugustSeptemberOctoberNovemberDecember2025FebruaryMarchAprilMayJuneJulyAugustSeptemberOctoberNovemberDecember2026FebruaryMarchApril0204060801001201401601120.SR2285.SR8313.SR
-⚖️ التوزيع الأمثل لتقليل المخاطر (Min Volatility)
+# سحب البيانات
+@st.cache_data
+def load_data(symbols, start):
+    df = yf.download(symbols, start=start)['Close']
+    return df
 
-مصرف الراجحي
+data = load_data(tickers, start_date)
 
-44.49%
+if not data.empty:
+    st.subheader("📈 أداء الأسهم المختارة (الإنماء، رسن، المطاحن، مرافق)")
+    st.line_chart(data)
 
-رسن
+    try:
+        # الحسابات الكمية
+        mu = expected_returns.mean_historical_return(data)
+        S = risk_models.sample_cov(data)
+        ef = EfficientFrontier(mu, S)
+        
+        # اختيار الأوزان لتقليل التذبذب
+        weights = ef.min_volatility()
+        cleaned_weights = ef.clean_weights()
 
-6.16%
+        # عرض النتائج في واجهة الموقع
+        st.subheader("⚖️ التوزيع الأمثل لتقليل المخاطر (Min Volatility)")
+        cols = st.columns(len(tickers))
+        
+        for i, ticker in enumerate(tickers):
+            if ticker == '1150.SR': name = "مصرف الإنماء"
+            elif ticker == '8313.SR': name = "رسن"
+            elif ticker == '2285.SR': name = "المطاحن العربية"
+            else: name = "مرافق"
+            
+            cols[i].metric(name, f"{cleaned_weights[ticker]:.2%}")
 
-المطاحن العربية
+        # إحصائيات أداء المحفظة
+        ret, vol, sharpe = ef.portfolio_performance()
+        
+        st.markdown("---")
+        col_res1, col_res2, col_res3 = st.columns(3)
+        col_res1.info(f"**العائد السنوي المتوقع:** {ret:.2%}")
+        col_res2.info(f"**التذبذب (المخاطر):** {vol:.2%}")
+        
+        # تلوين النتيجة بناءً على نسبة شارب
+        if sharpe >= 0:
+            col_res3.success(f"**نسبة شارب (Sharpe Ratio):** {sharpe:.2f}")
+        else:
+            col_res3.error(f"**نسبة شارب (Sharpe Ratio):** {sharpe:.2f}")
 
-49.36%
+    except Exception as e:
+        st.error(f"حدث خطأ في الحسابات الرياضية: {e}")
+else:
+    st.error("لم يتم العثور على بيانات، يرجى التأكد من الرموز أو التاريخ.")
 
-العائد السنوي المتوقع: 0.17%
-
-التذبذب (المخاطر): 17.57%
-
-نسبة شارب (Sharpe Ratio): 0.01
-	
-	
-	
+st.sidebar.markdown("""
+---
+**تحليل المحفظة:**
+إضافة 'مرافق' توفر حماية دفاعية قوية، بينما 'مصرف الإنماء' يوازن بين النمو والاستقرار المالي.
+""")
