@@ -9,9 +9,8 @@ st.title("📊 منصة التحليل الكمي للأسهم السعودية"
 st.sidebar.header("إعدادات المحفظة")
 
 # اختيار الأسهم
-tickers = ['4250.SR', '2285.SR']
-start_date = st.sidebar.date_input("تاريخ بداية البيانات", value=pd.to_datetime("2024-01-01"))
-
+# الرموز الجديدة: رسن (8313) والمطاحن العربية (2285)
+tickers = ['8313.SR', '2285.SR']
 # سحب البيانات
 data = yf.download(tickers, start=start_date)['Close']
 
