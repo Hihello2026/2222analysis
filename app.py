@@ -9,8 +9,8 @@ st.set_page_config(page_title="Quant Analysis - SA", layout="wide")
 st.title("📊 منصة التحليل الكمي للأسهم السعودية")
 st.sidebar.header("إعدادات المحفظة")
 
-# قائمة الأسهم الجديدة (الإنماء، رسن، المطاحن العربية، مرافق)
-tickers = ['1150.SR', '8313.SR', '2285.SR', '2083.SR']
+# قائمة الأسهم الجديدة (stc، رسن، المطاحن العربية، مرافق)
+tickers = ['7010.SR', '8313.SR', '2285.SR', '2083.SR']
 
 # تحديد تاريخ البداية
 start_date = st.sidebar.date_input("تاريخ بداية البيانات", value=pd.to_datetime("2024-06-15"))
@@ -24,7 +24,7 @@ def load_data(symbols, start):
 data = load_data(tickers, start_date)
 
 if not data.empty:
-    st.subheader("📈 أداء الأسهم المختارة (الإنماء، رسن، المطاحن، مرافق)")
+    st.subheader("📈 أداء الأسهم المختارة (stc، رسن، المطاحن، مرافق)")
     st.line_chart(data)
 
     try:
@@ -42,7 +42,7 @@ if not data.empty:
         cols = st.columns(len(tickers))
         
         for i, ticker in enumerate(tickers):
-            if ticker == '1150.SR': name = "مصرف الإنماء"
+            if ticker == '7010.SR': name = "stc"
             elif ticker == '8313.SR': name = "رسن"
             elif ticker == '2285.SR': name = "المطاحن العربية"
             else: name = "مرافق"
@@ -71,5 +71,5 @@ else:
 st.sidebar.markdown("""
 ---
 **تحليل المحفظة:**
-إضافة 'مرافق' توفر حماية دفاعية قوية، بينما 'مصرف الإنماء' يوازن بين النمو والاستقرار المالي.
+تعتبر **stc** الركيزة الأساسية للاستقرار، بينما توفر **مرافق** حماية قطاعية، وتضيف **رسن** و**المطاحن** فرص نمو متوازنة.
 """)
