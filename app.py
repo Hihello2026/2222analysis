@@ -7,13 +7,14 @@ import numpy as np
 # 1. إعدادات المنصة
 st.set_page_config(page_title="Saudi Moat Portfolio", layout="wide")
 st.title("Saudi Economic Moat Portfolio 2026")
-st.markdown("تم تحديث المحفظة: إضافة قطاع الطاقة الاستراتيجي بدلاً من التأمين الطبي")
+st.markdown("تحديث: إدراج 'السعودية للكهرباء' كأقوى احتكار طبيعي في قطاع المرافق العامة")
 
-# 2. القاموس المحدث للأسهم (تم استبدال بوبا بـ السعودية للطاقة)
+# 2. القاموس المحدث للأسهم (إدراج شركة الكهرباء 5110)
 moat_assets = {
     '2222.SR': {'name': 'أرامكو', 'moat': 'ندرة التكلفة والاحتياطي'},
     '2223.SR': {'name': 'لوبريف', 'moat': 'تخصص زيوت الأساس'},
     '2083.SR': {'name': 'مرافق', 'moat': 'احتكار طبيعي (الجبيل وينبع)'},
+    '5110.SR': {'name': 'السعودية للكهرباء', 'moat': 'الاحتكار الطبيعي لشبكة الطاقة الوطنية'}, # التعديل هنا
     '1111.SR': {'name': 'تداول', 'moat': 'خندق تنظيمي (المشغل الوحيد)'},
     '1120.SR': {'name': 'الراجحي', 'moat': 'ودائع مجانية وهيمنة الأفراد'},
     '1180.SR': {'name': 'الأهلي', 'moat': 'تمويل المشاريع العملاقة'},
@@ -22,7 +23,6 @@ moat_assets = {
     '7010.SR': {'name': 'stc', 'moat': 'بنية تحتية وبيانات ضخمة'},
     '4263.SR': {'name': 'سأل - SAL', 'moat': 'هيمنة الشحن الجوي'},
     '4031.SR': {'name': 'الخدمات الأرضية', 'moat': 'محرك المطارات التشغيلي'},
-    '2381.SR': {'name': 'الحفر العربية', 'moat': 'العمود الفقري لخدمات الطاقة (السعودية للطاقة)'}, # تم الاستبدال هنا
     '4007.SR': {'name': 'الحمادي', 'moat': 'كفاءة مالية وتمركز استراتيجي'},
     '1211.SR': {'name': 'معادن', 'moat': 'حقوق تنقيب حصرية'},
     '2020.SR': {'name': 'سابك للمغذيات', 'moat': 'كفاءة إنتاج عالمية'},
@@ -42,7 +42,6 @@ max_w = st.sidebar.slider("الحد الأقصى (%)", 5, 25, 12) / 100
 @st.cache_data
 def get_safe_data(symbols):
     try:
-        # جلب البيانات وتنظيفها
         data = yf.download(symbols, start="2024-06-15", progress=False)['Close']
         data = data.ffill().dropna(axis=1, thresh=len(data)*0.5).dropna()
         
@@ -50,8 +49,13 @@ def get_safe_data(symbols):
         data.rename(columns=mapping, inplace=True)
         
         div_info = {}
-        # قيم افتراضية للعوائد بناءً على التوقعات المالية 2026
-        fallback = {'stc': 0.0516, 'أرامكو': 0.045, 'الحمادي': 0.0307, 'الحفر العربية': 0.035}
+        # قيم افتراضية للتوزيعات المتوقعة لضمان دقة الجدول
+        fallback = {
+            'السعودية للكهرباء': 0.035, # متوسط توزيعات تاريخي مستقر
+            'stc': 0.0516, 
+            'أرامكو': 0.045, 
+            'مرافق': 0.052
+        }
         
         for sym in actual_tickers:
             name = mapping[sym]
@@ -68,7 +72,7 @@ def get_safe_data(symbols):
 price_data, dividend_yields = get_safe_data(tickers)
 
 if not price_data.empty:
-    st.subheader("الأداء السعري الموحد لشركات الخنادق الاستراتيجية")
+    st.subheader("الأداء السعري لشركات الخنادق الاستراتيجية")
     st.line_chart(price_data)
 
     try:
@@ -76,7 +80,6 @@ if not price_data.empty:
         mu = expected_returns.mean_historical_return(price_data)
         S = risk_models.sample_cov(price_data)
         
-        # ضبط المصفوفات لتجنب NaN
         mu = mu.fillna(mu.mean())
         S = S.fillna(0)
 
@@ -84,7 +87,7 @@ if not price_data.empty:
         weights = ef.max_sharpe(risk_free_rate=0.02)
         target_weights = ef.clean_weights()
 
-        # 5. عرض النتائج
+        # 5. عرض النتائج والجدول
         st.markdown("---")
         final_list = []
         total_income = 0
@@ -100,8 +103,8 @@ if not price_data.empty:
                 final_list.append({
                     "الشركة": name,
                     "الخندق الاقتصادي": moat_type,
-                    "الوزن": f"{weight:.2%}",
-                    "العائد النقدى": f"{y_rate:.2%}",
+                    "الوزن المقترح": f"{weight:.2%}",
+                    "عائد التوزيع": f"{y_rate:.2%}",
                     "الدخل المتوقع": f"{income:,.2f}"
                 })
 
@@ -114,7 +117,7 @@ if not price_data.empty:
         c1.metric("نمو رأس المال المتوقع", f"{ret:.2%}")
         c2.metric("عائد التوزيعات النقدي", f"{(total_income/portfolio_value):.2%}")
         c3.metric("تذبذب المحفظة", f"{vol:.2%}")
-        c4.metric("نسبة شارب", f"{sharpe:.2f}")
+        c4.metric("نسبة شارب (الكفاءة)", f"{sharpe:.2f}")
 
     except Exception as e:
         st.error(f"حدث خطأ في معالجة البيانات: {e}")
