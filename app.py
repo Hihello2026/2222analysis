@@ -6,7 +6,7 @@ import pandas as pd
 # Page Configuration
 st.set_page_config(page_title="Quantitative Equity Analysis", layout="wide")
 
-# Custom CSS for Institutional UI
+# Custom CSS for Professional UI
 st.markdown("""
     <style>
     .main { background-color: #f5f7f9; }
@@ -46,14 +46,13 @@ def get_portfolio_data(symbols, start):
         price_df = yf.download(symbols, start=start)['Close']
         price_df.rename(columns=mapping, inplace=True)
         
-        # Download dividend data with validation
+        # Download dividend data with standardization
         div_info = {}
         for sym in symbols:
             ticker_obj = yf.Ticker(sym)
-            # yfinance dividendYield is often a decimal (0.04 for 4%)
             y_val = ticker_obj.info.get('dividendYield')
-            # Fallback to 0 if data is missing or None
-            div_info[mapping[sym]] = float(y_val) if y_val else 0.0
+            # Standardize yfinance yield (converts 0.04 to 4% or handles missing data)
+            div_info[mapping[sym]] = float(y_val) if y_val is not None else 0.0
             
         return price_df, div_info
     except Exception:
@@ -70,20 +69,20 @@ if not price_data.empty:
         mu = expected_returns.mean_historical_return(price_data)
         S = risk_models.sample_cov(price_data)
         
-        # 2. Optimization with 5% floor
+        # 2. Optimization with 5% Floor (Minimum Allocation Constraint)
         ef = EfficientFrontier(mu, S)
         ef.add_constraint(lambda w: w >= 0.05)
         weights = ef.max_sharpe(risk_free_rate=risk_free_rate) 
         target_weights = ef.clean_weights()
 
-        # 3. Optimal Allocation Display
+        # 3. Optimal Allocation Dashboard
         st.markdown("---")
         st.subheader("Optimal Portfolio Allocation")
         cols = st.columns(len(tickers))
         for i, ticker_name in enumerate(mapping.values()):
             cols[i].metric(label=ticker_name, value=f"{target_weights.get(ticker_name, 0):.2%}")
 
-        # 4. Automated Management & Corrected Yield Analysis
+        # 4. Rebalancing & Yield Management
         st.markdown("---")
         st.subheader("Automated Management & Yield Analysis")
         
@@ -91,15 +90,15 @@ if not price_data.empty:
         total_income = 0
         
         for asset, t_weight in target_weights.items():
-            # Handle NaN values for newer listings by filling with 0
+            # Handle drift calculation (handling potential NaN for new listings)
             current_p = price_data[asset].iloc[-1]
             initial_p = price_data[asset].iloc[0]
-            
             perf = (current_p / initial_p) - 1 if initial_p > 0 else 0
+            
             current_w = t_weight * (1 + perf)
             drift = current_w - t_weight
             
-            # Dividend Logic
+            # Standardized Dividend Logic
             y_rate = dividend_yields.get(asset, 0)
             asset_value = t_weight * portfolio_value
             annual_income = asset_value * y_rate
@@ -120,7 +119,7 @@ if not price_data.empty:
 
         st.table(pd.DataFrame(mgmt_data))
 
-        # 5. Portfolio Analytics Summary
+        # 5. Portfolio Performance Summary
         st.markdown("---")
         st.subheader("Institutional Portfolio Summary")
         ret, vol, sharpe = ef.portfolio_performance(risk_free_rate=risk_free_rate)
@@ -132,6 +131,12 @@ if not price_data.empty:
         m4.metric("Sharpe Ratio", f"{sharpe:.2f}")
 
     except Exception as e:
-        st.error(f"Mathematical Error: {e}")
+        st.error(f"Mathematical Optimization Error: {e}")
 else:
-    st.error("Data retrieval failed.")
+    st.error("Data retrieval failed. Please check your network or ticker symbols.")
+
+st.sidebar.markdown("""
+---
+**Technical Methodology**
+Utilizing **Modern Portfolio Theory (MPT)** to maximize risk-adjusted returns (Sharpe Ratio). A **5% floor** is enforced to ensure structural diversification across all selected assets.
+""")
