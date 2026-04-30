@@ -2,11 +2,11 @@ import streamlit as st
 import yfinance as yf
 from pypfopt import EfficientFrontier, risk_models, expected_returns
 import pandas as pd
-import time
 
-# إعدادات الصفحة الاحترافية
+# 1. إعدادات الصفحة الاحترافية
 st.set_page_config(page_title="Quantitative Equity Analysis", layout="wide")
 
+# تصميم واجهة مؤسسية (Industrial Minimalism)
 st.markdown("""
     <style>
     .main { background-color: #f5f7f9; }
@@ -22,7 +22,7 @@ st.markdown("""
 st.title("Strategic Equity Analysis: Income & Stability")
 st.sidebar.header("Portfolio Configuration")
 
-# الأصول المختارة: stc، الحمادي، المطاحن العربية، المرافق
+# 2. تعريف الأصول والبيانات الاحتياطية (تجنباً لظهور نسبة 0% في العوائد)
 tickers = ['7010.SR', '4007.SR', '2285.SR', '2083.SR']
 mapping = {
     '7010.SR': 'stc',
@@ -31,63 +31,71 @@ mapping = {
     '2083.SR': 'Marafiq'
 }
 
-# مدخلات المحفظة
+# قيم عوائد التوزيعات التقريبية لعام 2026 كمصدر احتياطي
+fallback_yields = {
+    '7010.SR': 0.0516,  # stc
+    '4007.SR': 0.0422,  # الحمادي
+    '2083.SR': 0.0525,  # المرافق
+    '2285.SR': 0.0243   # المطاحن العربية
+}
+
+# 3. مدخلات المستخدم
 start_date = st.sidebar.date_input("Analysis Start Date", value=pd.to_datetime("2024-06-15"))
 portfolio_value = st.sidebar.number_input("Total Portfolio Value (SAR)", min_value=1000, value=1000000)
 risk_free_rate = 0.02
 
-@st.cache_data(show_spinner="جاري تحديث بيانات السوق...")
+@st.cache_data(show_spinner="جاري جلب بيانات السوق وتحليل العوائد...")
 def get_portfolio_data(symbols, start):
     try:
-        # محاولة جلب البيانات مع مهلة زمنية قصيرة
+        # جلب أسعار الإغلاق
         price_df = yf.download(symbols, start=start, progress=False)['Close']
-        
         if price_df.empty:
             return pd.DataFrame(), {}
-
-        # إعادة تسمية الأعمدة
-        if len(symbols) > 1:
-            price_df.rename(columns=mapping, inplace=True)
-        else:
-            price_df = pd.DataFrame(price_df)
-            price_df.columns = [mapping[symbols[0]]]
             
+        price_df.rename(columns=mapping, inplace=True)
+        
         div_info = {}
         for sym in symbols:
             ticker_obj = yf.Ticker(sym)
-            # جلب عائد التوزيعات مع معالجة الأخطاء
             try:
+                # محاولة جلب العائد الحي
                 y_val = ticker_obj.info.get('dividendYield')
-                if y_val:
+                if y_val and y_val > 0:
                     div_info[mapping[sym]] = float(y_val) if y_val < 1 else float(y_val) / 100
                 else:
-                    div_info[mapping[sym]] = 0.0
+                    # استخدام القيمة الاحتياطية إذا كان العائد 0 أو مفقوداً
+                    div_info[mapping[sym]] = fallback_yields.get(sym, 0.0)
             except:
-                div_info[mapping[sym]] = 0.0
+                div_info[mapping[sym]] = fallback_yields.get(sym, 0.0)
                 
         return price_df, div_info
     except Exception as e:
-        st.sidebar.error(f"Connection Error: {e}")
+        st.error(f"خطأ في الاتصال بالبيانات: {e}")
         return pd.DataFrame(), {}
 
 # جلب البيانات
 price_data, dividend_yields = get_portfolio_data(tickers, start_date)
 
 if not price_data.empty:
+    # 4. عرض أداء الأسعار (Chart)
     st.subheader("Asset Price Performance (SAR)")
     st.line_chart(price_data)
 
     try:
-        # الحسابات الكمية للمحفظة
+        # 5. الحسابات الكمية (Mean-Variance Optimization)
         mu = expected_returns.mean_historical_return(price_data)
         S = risk_models.sample_cov(price_data)
         
+        # تحسين المحفظة بناءً على أقصى نسبة شارب
         ef = EfficientFrontier(mu, S)
-        # فرض حد أدنى للتنويع (5%)
+        # فرض حد أدنى للتنويع (5%) لكل سهم وحد أقصى (60%) لتجنب التركيز العالي جداً
         ef.add_constraint(lambda w: w >= 0.05)
+        ef.add_constraint(lambda w: w <= 0.60) 
+        
         weights = ef.max_sharpe(risk_free_rate=risk_free_rate) 
         target_weights = ef.clean_weights()
 
+        # 6. جدول إدارة المحفظة وتحليل العوائد
         st.markdown("---")
         st.subheader("Portfolio Management & Yield Analysis")
         
@@ -96,12 +104,13 @@ if not price_data.empty:
         
         for asset, t_weight in target_weights.items():
             y_rate = dividend_yields.get(asset, 0)
-            annual_income = (t_weight * portfolio_value) * y_rate
+            asset_sar_value = t_weight * portfolio_value
+            annual_income = asset_sar_value * y_rate
             total_income += annual_income
             
             mgmt_data.append({
                 "Asset": asset,
-                "Target %": f"{t_weight:.2%}",
+                "Target Weight": f"{t_weight:.2%}",
                 "Div. Yield": f"{y_rate:.2%}",
                 "Est. Annual Income (SAR)": f"{annual_income:,.2f}",
                 "Action": "Optimal"
@@ -109,6 +118,7 @@ if not price_data.empty:
 
         st.table(pd.DataFrame(mgmt_data))
 
+        # 7. ملخص الأداء المؤسسي
         st.markdown("---")
         st.subheader("Institutional Performance Metrics")
         ret, vol, sharpe = ef.portfolio_performance(risk_free_rate=risk_free_rate)
@@ -119,7 +129,9 @@ if not price_data.empty:
         m3.metric("Annual Volatility", f"{vol:.2%}")
         m4.metric("Sharpe Ratio", f"{sharpe:.2f}")
 
+        st.sidebar.success("تم تحديث المحفظة بنجاح مع تفعيل آلية التصحيح التلقائي للعوائد.")
+
     except Exception as e:
-        st.error(f"Mathematical Error: {e}")
+        st.error(f"خطأ في العمليات الحسابية: {e}")
 else:
-    st.warning("⚠️ لم يتم العثور على بيانات. يرجى التأكد من اتصال الإنترنت أو المحاولة مرة أخرى لاحقاً.")
+    st.warning("⚠️ لا توجد بيانات كافية للتحليل. يرجى مراجعة رموز الأسهم أو الاتصال بالشبكة.")
