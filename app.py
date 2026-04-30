@@ -4,8 +4,8 @@ from pypfopt import EfficientFrontier, risk_models, expected_returns
 import pandas as pd
 import numpy as np
 
-# 1. Professional UI Setup
-st.set_page_config(page_title="Strategic Equity Analysis", layout="wide")
+# 1. Institutional Light Theme UI
+st.set_page_config(page_title="Institutional Equity Analysis", layout="wide")
 
 st.markdown("""
     <style>
@@ -14,19 +14,18 @@ st.markdown("""
     .stMetric {
         background-color: #ffffff;
         padding: 20px;
-        border-radius: 8px;
+        border-radius: 6px;
         border: 1px solid #e2e8f0;
-        box-shadow: 0 1px 2px rgba(0,0,0,0.05);
     }
-    div[data-testid="stTable"] { background-color: #ffffff; border-radius: 8px; }
+    div[data-testid="stTable"] { background-color: #ffffff; border-radius: 6px; }
     h1, h2, h3 { color: #0f172a; font-family: 'Inter', sans-serif; }
     </style>
     """, unsafe_allow_html=True)
 
-st.title("Strategic Equity Analysis")
-st.markdown("Advanced Asset Allocation for Sharpe Ratio Optimization")
+st.title("Strategic Asset Allocation")
+st.markdown("Advanced Quantitative Optimization for Sharpe Ratio Efficiency")
 
-# 2. Asset Dictionary
+# 2. Moat Assets Portfolio
 moat_assets = {
     '2222.SR': {'name': 'Aramco', 'moat': 'Cost Leadership & Reserves'},
     '2223.SR': {'name': 'Luberef', 'moat': 'Base Oil Specialization'},
@@ -51,77 +50,63 @@ moat_assets = {
 tickers = list(moat_assets.keys())
 mapping = {k: v['name'] for k, v in moat_assets.items()}
 
-# 3. Enhanced Parameters for High Sharpe
+# 3. Sidebar Configuration
 capital = st.sidebar.number_input("Total Capital (SAR)", value=1000000)
-# Narrowing weights to enforce diversification (Essential for Sharpe > 1.0)
-min_w = st.sidebar.slider("Min Weight (%)", 1, 3, 2) / 100
-max_w = st.sidebar.slider("Max Weight (%)", 5, 12, 10) / 100 
+# Strict 10% cap to force diversification and lower volatility
+max_w = 0.10 
 risk_free = 0.04 
 
 @st.cache_data
-def get_market_data(symbols):
+def get_institutional_data(symbols):
     try:
         data = yf.download(symbols, start="2024-06-15", progress=False)['Close']
-        data = data.ffill().dropna(axis=1, thresh=len(data)*0.5).dropna()
+        data = data.ffill().dropna(axis=1, thresh=len(data)*0.6).dropna()
         actual_symbols = [s for s in symbols if s in data.columns]
         data.rename(columns=mapping, inplace=True)
         
         div_yields = {}
         for s in actual_symbols:
             name = mapping[s]
-            ticker_info = yf.Ticker(s).info
-            y = ticker_info.get('dividendYield', 0)
-            div_yields[name] = float(y) if y and y < 1 else (float(y)/100 if y else 0.035)
+            y = yf.Ticker(s).info.get('dividendYield', 0.035)
+            div_yields[name] = float(y) if y and y < 1 else float(y)/100
         return data, div_yields
     except:
         return pd.DataFrame(), {}
 
-price_data, div_yields = get_market_data(tickers)
+price_data, div_yields = get_institutional_data(tickers)
 
 if not price_data.empty:
-    st.subheader("Asset Price Performance")
-    st.line_chart(price_data)
-
     try:
-        # 4. Optimization Engine
+        # 4. Optimization toward Sharpe Ratio 1.0+
         mu = expected_returns.mean_historical_return(price_data)
         S = risk_models.sample_cov(price_data)
         
-        # We target the Max Sharpe while strictly enforcing the 10% cap
-        ef = EfficientFrontier(mu, S, weight_bounds=(min_w, max_w))
+        # Initialize Efficient Frontier with 10% cap
+        ef = EfficientFrontier(mu, S, weight_bounds=(0.02, max_w))
         
-        # Optimization Target
+        # Objective: Maximize Sharpe Ratio
         weights = ef.max_sharpe(risk_free_rate=risk_free)
         clean_weights = ef.clean_weights()
 
-        st.markdown("---")
-        st.subheader("Optimized Asset Allocation")
-        
-        allocation_data = []
+        # 5. Output Table
+        st.subheader("Optimized Portfolio Structure")
+        final_table = []
         total_income = 0
-        
-        for name, weight in clean_weights.items():
-            if weight > 0.001:
+        for name, w in clean_weights.items():
+            if w > 0:
                 y = div_yields.get(name, 0.035)
-                income = (weight * capital) * y
+                income = (w * capital) * y
                 total_income += income
-                moat_type = next((v['moat'] for k, v in moat_assets.items() if v['name'] == name), "N/A")
-                
-                allocation_data.append({
-                    "Asset": name,
-                    "Economic Moat": moat_type,
-                    "Weight": f"{weight:.2%}",
-                    "Yield": f"{y:.2%}",
-                    "Est. Income (SAR)": f"{income:,.2f}"
+                moat = next((v['moat'] for k, v in moat_assets.items() if v['name'] == name), "")
+                final_table.append({
+                    "Asset": name, "Moat Strategy": moat, "Weight": f"{w:.2%}",
+                    "Yield": f"{y:.2%}", "Annual Income": f"{income:,.2f}"
                 })
+        st.table(pd.DataFrame(final_table))
 
-        st.table(pd.DataFrame(allocation_data))
-
-        # 5. Institutional Metrics
+        # 6. Performance Metrics
         st.markdown("---")
-        st.subheader("Portfolio Performance Summary")
         ret, vol, sharpe = ef.portfolio_performance(risk_free_rate=risk_free)
-        
         c1, c2, c3, c4 = st.columns(4)
         c1.metric("Expected Return", f"{ret:.2%}")
         c2.metric("Portfolio Yield", f"{(total_income/capital):.2%}")
@@ -129,4 +114,4 @@ if not price_data.empty:
         c4.metric("Sharpe Ratio", f"{sharpe:.2f}")
 
     except Exception as e:
-        st.error(f"Mathematical Error: {e}")
+        st.error(f"Error during optimization: {e}")
