@@ -4,9 +4,10 @@ from pypfopt import EfficientFrontier, risk_models, expected_returns
 import pandas as pd
 import numpy as np
 from datetime import datetime
+import requests
 
-# 1. Institutional UI & Styling
-st.set_page_config(page_title="Elite Equity Analysis", layout="wide")
+# 1. Institutional Design & Theming
+st.set_page_config(page_title="Archer Matrix | archb26", layout="wide")
 
 st.markdown("""
     <style>
@@ -23,139 +24,131 @@ st.markdown("""
     """, unsafe_allow_html=True)
 
 st.title("Strategic Asset Allocation")
-st.markdown("Precision Portfolio Engineering: Growth & Dividends vs. TASI Benchmark")
+st.markdown(f"**Current Date:** {datetime.now().strftime('%Y-%m-%d')} | **Status:** Financial Moat Optimized")
 
-# 2. Updated Portfolio (Replacing Al Rajhi with BSF)
+# 2. Verified Asset Portfolio (BSF Integration)
 moat_assets = {
-    '2222.SR': {'name': 'Aramco', 'moat': 'Cost Leadership'},
-    '2223.SR': {'name': 'Luberef', 'moat': 'Base Oil Specialist'},
-    '2083.SR': {'name': 'Marafiq', 'moat': 'Utility Monopoly'},
-    '5110.SR': {'name': 'SEC', 'moat': 'National Grid'},
-    '1111.SR': {'name': 'Tadawul', 'moat': 'Sole Operator'},
-    '1050.SR': {'name': 'BSF', 'moat': 'Corporate Banking Lead'}, # Added Saudi French Bank
-    '1180.SR': {'name': 'SNB', 'moat': 'Giga-Project Capital'},
-    '8313.SR': {'name': 'Rasan', 'moat': 'Network Effect'},
-    '7217.SR': {'name': 'ELM', 'moat': 'Exclusive Data Integration'},
-    '2381.SR': {'name': 'Arabian Drilling', 'moat': 'Critical Infrastructure'},
-    '7010.SR': {'name': 'stc', 'moat': 'Digital Backbone'},
-    '4030.SR': {'name': 'Bahri', 'moat': 'Maritime Logistics Lead'},
-    '4263.SR': {'name': 'SAL', 'moat': 'Air Cargo Monopoly'},
-    '4031.SR': {'name': 'SGS', 'moat': 'Airport Operations'},
-    '4013.SR': {'name': 'HMG', 'moat': 'Premium Healthcare Efficiency'},
-    '1211.SR': {'name': 'Maaden', 'moat': 'Resource Rights'},
-    '2020.SR': {'name': 'SABIC AN', 'moat': 'Production Efficiency'},
-    '2280.SR': {'name': 'Almarai', 'moat': 'Distribution Power'},
-    '1830.SR': {'name': 'Leejam', 'moat': 'Fitness Scale'}
+    '2222.SR': {'name': 'Aramco', 'moat': 'Cost Leadership', 'yield': 0.065},
+    '2223.SR': {'name': 'Luberef', 'moat': 'Base Oil Specialist', 'yield': 0.072},
+    '2083.SR': {'name': 'Marafiq', 'moat': 'Utility Monopoly', 'yield': 0.038},
+    '5110.SR': {'name': 'SEC', 'moat': 'National Grid', 'yield': 0.040},
+    '1111.SR': {'name': 'Tadawul', 'moat': 'Sole Operator', 'yield': 0.028},
+    '1050.SR': {'name': 'BSF', 'moat': 'Corporate Banking Lead', 'yield': 0.045},
+    '1180.SR': {'name': 'SNB', 'moat': 'Giga-Project Capital', 'yield': 0.039},
+    '8313.SR': {'name': 'Rasan', 'moat': 'Network Effect', 'yield': 0.012},
+    '7217.SR': {'name': 'ELM', 'moat': 'Exclusive Data Integration', 'yield': 0.015},
+    '2381.SR': {'name': 'Arabian Drilling', 'moat': 'Critical Infrastructure', 'yield': 0.035},
+    '7010.SR': {'name': 'stc', 'moat': 'Digital Backbone', 'yield': 0.052},
+    '4030.SR': {'name': 'Bahri', 'moat': 'Maritime Logistics Lead', 'yield': 0.048},
+    '4263.SR': {'name': 'SAL', 'moat': 'Air Cargo Monopoly', 'yield': 0.022},
+    '4031.SR': {'name': 'SGS', 'moat': 'Airport Operations', 'yield': 0.042},
+    '4013.SR': {'name': 'HMG', 'moat': 'Premium Healthcare Efficiency', 'yield': 0.019},
+    '1211.SR': {'name': 'Maaden', 'moat': 'Resource Rights', 'yield': 0.000},
+    '2020.SR': {'name': 'SABIC AN', 'moat': 'Production Efficiency', 'yield': 0.044},
+    '2280.SR': {'name': 'Almarai', 'moat': 'Distribution Power', 'yield': 0.025},
+    '1830.SR': {'name': 'Leejam', 'moat': 'Fitness Scale', 'yield': 0.024}
 }
 
 tickers = list(moat_assets.keys())
 mapping = {k: v['name'] for k, v in moat_assets.items()}
 
-# 3. Sidebar Configuration
+# 3. Execution Engine
+@st.cache_data
+def get_live_data(symbols, start, end):
+    try:
+        data = yf.download(symbols + ['^TASI.SR'], start=start, end=end, progress=False)['Close']
+        data = data.ffill().dropna(axis=1, thresh=len(data)*0.5).dropna()
+        benchmark = data['^TASI.SR']
+        assets = data.drop(columns=['^TASI.SR']).rename(columns=mapping)
+        return assets, benchmark
+    except Exception as e:
+        st.error(f"Data Fetch Error: {e}")
+        return pd.DataFrame(), pd.Series()
+
+# Sidebar Settings
 st.sidebar.header("Backtest Configuration")
 start_date = st.sidebar.date_input("Start Date", value=pd.to_datetime("2024-06-15"))
 end_date = st.sidebar.date_input("End Date", value=datetime.now())
 capital = st.sidebar.number_input("Total Capital (SAR)", value=1000000)
 
-@st.cache_data
-def get_strategic_data(symbols, start, end):
-    try:
-        data = yf.download(symbols + ['^TASI.SR'], start=start, end=end, progress=False)['Close']
-        data = data.ffill().dropna(axis=1, thresh=len(data)*0.5).dropna()
-        
-        # Projections for 2026 Dividend Yields
-        real_yields = {
-            'Aramco': 0.065, 'stc': 0.052, 'Bahri': 0.048, 
-            'BSF': 0.045, 'SNB': 0.039, 'Luberef': 0.072,
-            'SEC': 0.040, 'HMG': 0.019, 'SABIC AN': 0.044,
-            'Marafiq': 0.038, 'SGS': 0.042, 'Tadawul': 0.028,
-            'Almarai': 0.025, 'SAL': 0.022, 'ELM': 0.015,
-            'Rasan': 0.012, 'Maaden': 0.000, 'Leejam': 0.024,
-            'Arabian Drilling': 0.035
-        }
-        
-        div_yields = {mapping[s]: real_yields.get(mapping[s], 0.035) for s in symbols if s in data.columns}
-        benchmark = data['^TASI.SR']
-        assets = data.drop(columns=['^TASI.SR']).rename(columns=mapping)
-        return assets, benchmark, div_yields
-    except:
-        return pd.DataFrame(), pd.Series(), {}
+# Telegram Config (Optional - replace with your secrets)
+BOT_TOKEN = "YOUR_TELEGRAM_BOT_TOKEN"
+CHAT_ID = "YOUR_CHAT_ID"
 
-# 4. Engine Execution
+def send_telegram(msg):
+    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage?chat_id={CHAT_ID}&text={msg}"
+    try: requests.get(url)
+    except: pass
+
+# 4. Processing & Dashboard
 if start_date < end_date:
-    assets_data, tasi_data, div_yields = get_strategic_data(tickers, start_date, end_date)
+    assets_data, tasi_data = get_live_data(tickers, start_date, end_date)
 
     if not assets_data.empty:
+        # Portfolio Optimization
         mu = expected_returns.mean_historical_return(assets_data)
         S = risk_models.CovarianceShrinkage(assets_data).ledoit_wolf()
-        
         ef = EfficientFrontier(mu, S, weight_bounds=(0.02, 0.09))
         weights = ef.max_sharpe(risk_free_rate=0.04)
         clean_weights = ef.clean_weights()
 
         p_ret, p_vol, p_sharpe = ef.portfolio_performance(risk_free_rate=0.04)
         
-        total_income = 0
-        final_table = []
-        for name, w in clean_weights.items():
-            if w > 0:
-                y = div_yields.get(name, 0.035)
-                income = (w * capital) * y
-                total_income += income
-                logic = next((v['moat'] for k, v in moat_assets.items() if v['name'] == name), "N/A")
-                final_table.append({
-                    "Asset": name, "Moat Strategy": logic, "Weight": f"{w:.2%}",
-                    "Div. Yield": f"{y:.2%}", "Est. Income (SAR)": f"{income:,.2f}"
-                })
-
-        # 5. Dashboard Output
+        # Metrics Display
         st.subheader("Performance & Dividend Intelligence")
         m1, m2, m3, m4 = st.columns(4)
         m1.metric("Capital Return", f"{p_ret:.2%}")
-        m2.metric("Portfolio Yield", f"{(total_income/capital):.2%}")
-        m3.metric("Annual Div. Income", f"{total_income:,.2f} SAR")
+        
+        total_div = sum([clean_weights.get(mapping[t], 0) * moat_assets[t]['yield'] for t in tickers if mapping[t] in clean_weights])
+        m2.metric("Portfolio Yield", f"{total_div:.2%}")
+        m3.metric("Annual Div. Income", f"{(total_div * capital):,.2f} SAR")
         m4.metric("Sharpe Ratio", f"{p_sharpe:.2f}")
 
+        # --- SMART ALERT SYSTEM (Fixing KeyError) ---
         st.markdown("---")
-        st.subheader("Detailed Allocation (BSF Update)")
-        st.table(pd.DataFrame(final_table))
+        st.subheader("🎯 Archer Matrix Live Alerts")
+        
+        target_configs = {
+            'Aramco': 28.50, 'stc': 36.00, 'BSF': 32.00, 
+            'Luberef': 130.00, 'HMG': 270.00
+        }
+        
+        alert_cols = st.columns(len(target_configs))
+        for i, (name, target) in enumerate(target_configs.items()):
+            if name in assets_data.columns:
+                price = assets_data[name].iloc[-1]
+                with alert_cols[i]:
+                    if price <= target:
+                        st.error(f"🚨 BUY: {name}")
+                        st.write(f"Price: {price:.2f}")
+                        if st.button(f"Notify {name}"):
+                            send_telegram(f"Archer Alert: {name} is at {price:.2f} (Target: {target})")
+                            st.toast("Sent!")
+                    else:
+                        st.success(f"✅ {name}")
+                        st.caption(f"Price: {price:.2f}")
 
-        # Comparison Growth Chart
-        st.subheader("Growth Comparison: Portfolio vs. TASI Index")
-        portfolio_daily = assets_data.pct_change().dropna().dot(np.array([clean_weights.get(c, 0) for c in assets_data.columns]))
+        # Allocation Table
+        st.markdown("---")
+        st.subheader("Detailed Asset Allocation")
+        alloc_data = []
+        for t in tickers:
+            w = clean_weights.get(mapping[t], 0)
+            if w > 0:
+                alloc_data.append({
+                    "Asset": mapping[t],
+                    "Moat Strategy": moat_assets[t]['moat'],
+                    "Weight": f"{w:.2%}",
+                    "Div. Yield": f"{moat_assets[t]['yield']:.2%}",
+                    "Est. Income": f"{(w * capital * moat_assets[t]['yield']):,.2f} SAR"
+                })
+        st.table(pd.DataFrame(alloc_data))
+
+        # Chart
+        st.markdown("---")
+        st.subheader("Growth Chart: Portfolio vs. TASI")
+        p_daily = assets_data.pct_change().dropna().dot(np.array([clean_weights.get(c, 0) for c in assets_data.columns]))
         st.line_chart(pd.DataFrame({
-            'Portfolio': (1 + portfolio_daily).cumprod(),
-            'TASI Market': (1 + tasi_data.pct_change().dropna()).cumprod()
-        })) 
-        # --- قسم نظام التنبيهات الذكي (Alert System) ---
-st.markdown("---")
-st.header("🎯 Archer Matrix Strategy Alerts")
-
-# تحديد أسعار الشراء المستهدفة (مثال بناءً على تحليل القيمة)
-target_prices = {
-    'Aramco': 28.50,
-    'stc': 36.00,
-    'BSF': 32.00,
-    'Luberef': 130.00,
-    'HMG': 270.00
-}
-
-alerts_found = False
-col_alerts = st.columns(len(target_prices))
-
-for i, (ticker_name, t_price) in enumerate(target_prices.items()):
-    # الحصول على السعر الحالي من البيانات التي تم سحبها سابقاً
-    current_price = assets_data[ticker_name].iloc[-1]
-    
-    with col_alerts[i]:
-        if current_price <= t_price:
-            st.error(f"🚨 BUY ALERT: {ticker_name}")
-            st.write(f"Current: {current_price:.2f}")
-            st.write(f"Target: {t_price:.2f}")
-            alerts_found = True
-        else:
-            st.success(f"✅ {ticker_name} Stable")
-            st.caption(f"Price: {current_price:.2f}")
-
-if not alerts_found:
-    st.info("No immediate buy signals. All assets are currently above target entry prices.")
+            'Portfolio': (1 + p_daily).cumprod(),
+            'TASI Index': (1 + tasi_data.pct_change().dropna()).cumprod()
+        }))
