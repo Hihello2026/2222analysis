@@ -2,21 +2,26 @@ import streamlit as st
 import yfinance as yf
 from pypfopt import EfficientFrontier, risk_models, expected_returns
 import pandas as pd
+import seaborn as sns
+import matplotlib.pyplot as plt
 
-# Page Configuration for a professional look
+# Page Configuration
 st.set_page_config(page_title="Quantitative Equity Analysis", layout="wide")
 
-# Custom CSS to refine the UI
 st.markdown("""
     <style>
-    .main {
-        background-color: #f5f7f9;
-    }
+    .main { background-color: #f5f7f9; }
     .stMetric {
         background-color: #ffffff;
         padding: 15px;
         border-radius: 5px;
         border: 1px solid #e1e4e8;
+    }
+    .rebalance-box {
+        padding: 20px;
+        border-radius: 10px;
+        background-color: #fff4e6;
+        border-left: 5px solid #ff922b;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -24,18 +29,26 @@ st.markdown("""
 st.title("Quantitative Equity Analysis Platform")
 st.sidebar.header("Portfolio Configuration")
 
-# Tickers: stc, Rasan, Arabian Mills, ELM, and Marafiq
+# Tickers and Mapping
 tickers = ['7010.SR', '8313.SR', '2285.SR', '7203.SR', '2083.SR']
+mapping = {
+    '7010.SR': 'stc',
+    '8313.SR': 'Rasan',
+    '2285.SR': 'Arabian Mills',
+    '7203.SR': 'ELM',
+    '2083.SR': 'Marafiq'
+}
 
-# Analysis Parameters
+# Sidebar Inputs
 start_date = st.sidebar.date_input("Analysis Start Date", value=pd.to_datetime("2024-06-15"))
-risk_free_rate = st.sidebar.number_input("Risk-Free Rate (%)", value=2.0) / 100
+portfolio_value = st.sidebar.number_input("Total Portfolio Value (SAR)", min_value=1000, value=100000)
+rebalance_threshold = st.sidebar.slider("Rebalancing Threshold (%)", 1, 10, 5) / 100
 
-# Data Acquisition
 @st.cache_data
 def load_data(symbols, start):
     try:
         df = yf.download(symbols, start=start)['Close']
+        df.rename(columns=mapping, inplace=True)
         return df
     except Exception:
         return pd.DataFrame()
@@ -43,58 +56,72 @@ def load_data(symbols, start):
 data = load_data(tickers, start_date)
 
 if not data.empty:
+    # 1. Visualization & Correlation
     st.subheader("Asset Performance Visualization")
     st.line_chart(data)
 
+    st.markdown("---")
+    col_chart, col_corr = st.columns([1, 1])
+    
+    with col_corr:
+        st.subheader("Asset Correlation Matrix")
+        corr_matrix = data.pct_change().corr()
+        fig, ax = plt.subplots(figsize=(8, 5))
+        sns.heatmap(corr_matrix, annot=True, cmap='RdYlGn', fmt='.2f', ax=ax, center=0)
+        st.pyplot(fig)
+
     try:
-        # Quantitative Modeling
+        # 2. Optimization Logic
         mu = expected_returns.mean_historical_return(data)
         S = risk_models.sample_cov(data)
-        
-        # Optimization: Maximum Sharpe Ratio
         ef = EfficientFrontier(mu, S)
-        weights = ef.max_sharpe(risk_free_rate=risk_free_rate) 
-        cleaned_weights = ef.clean_weights()
+        weights = ef.max_sharpe() 
+        target_weights = ef.clean_weights()
 
+        # 3. Automated Rebalancing Alerts Logic
         st.markdown("---")
-        st.subheader("Optimal Portfolio Allocation")
-        st.write("Calculated using the Maximum Sharpe Ratio objective to optimize risk-adjusted returns.")
+        st.subheader("Automated Rebalancing Management")
         
-        # Displaying weights in a clean grid
-        cols = st.columns(len(tickers))
-        for i, ticker in enumerate(tickers):
-            mapping = {
-                '7010.SR': 'stc',
-                '8313.SR': 'Rasan',
-                '2285.SR': 'Arabian Mills',
-                '7203.SR': 'ELM',
-                '2083.SR': 'Marafiq'
-            }
-            name = mapping.get(ticker, ticker)
-            cols[i].metric(label=name, value=f"{cleaned_weights[ticker]:.2%}")
+        # Simulate Current Weights (in a real app, these would come from your brokerage API)
+        # Here we assume a slight drift for demonstration
+        st.write("System comparison between Current Market Weights and Model Targets.")
+        
+        rebalance_data = []
+        for asset, t_weight in target_weights.items():
+            current_price = data[asset].iloc[-1]
+            initial_price = data[asset].iloc[0]
+            # Simulating drift based on price action
+            simulated_current_weight = t_weight * (current_price / initial_price) 
+            drift = simulated_current_weight - t_weight
+            
+            status = "Optimal"
+            if drift > rebalance_threshold: status = "Overweight (Sell)"
+            elif drift < -rebalance_threshold: status = "Underweight (Buy)"
+            
+            rebalance_data.append({
+                "Asset": asset,
+                "Target Weight": f"{t_weight:.2%}",
+                "Current Drift": f"{drift:+.2%}",
+                "Status": status,
+                "Action Amount (SAR)": f"{abs(drift * portfolio_value):,.2f}"
+            })
 
-        # Performance Metrics Section
+        rebalance_df = pd.DataFrame(rebalance_data)
+        
+        # Highlight Alerts
+        st.table(rebalance_df)
+
+        # 4. Portfolio Analytics
         st.markdown("---")
-        st.subheader("Portfolio Analytics")
-        ret, vol, sharpe = ef.portfolio_performance(risk_free_rate=risk_free_rate)
+        st.subheader("Portfolio Performance Metrics")
+        ret, vol, sharpe = ef.portfolio_performance()
         
         m1, m2, m3 = st.columns(3)
-        m1.write(f"**Expected Annual Return**")
-        m1.title(f"{ret:.2%}")
-        
-        m2.write(f"**Annual Volatility**")
-        m2.title(f"{vol:.2%}")
-        
-        m3.write(f"**Sharpe Ratio**")
-        m3.title(f"{sharpe:.2f}")
+        m1.metric("Expected Annual Return", f"{ret:.2%}")
+        m2.metric("Annual Volatility", f"{vol:.2%}")
+        m3.metric("Sharpe Ratio", f"{sharpe:.2f}")
 
     except Exception as e:
-        st.error(f"Mathematical Optimization Error: {e}")
+        st.error(f"Optimization Error: {e}")
 else:
-    st.error("Data retrieval failed. Verify connection and ticker symbols.")
-
-st.sidebar.markdown("""
----
-**Technical Methodology**
-This platform utilizes the **Modern Portfolio Theory (MPT)** framework. By optimizing the Sharpe Ratio, the system identifies the tangency portfolio on the Efficient Frontier, maximizing the excess return per unit of volatility.
-""")
+    st.error("Data retrieval failed.")
