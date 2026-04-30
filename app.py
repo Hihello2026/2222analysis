@@ -3,20 +3,20 @@ import yfinance as yf
 from pypfopt import EfficientFrontier, risk_models, expected_returns
 import pandas as pd
 
-# إعدادات الصفحة
+# Page Configuration
 st.set_page_config(page_title="Quant Analysis - High Growth", layout="wide")
 
-st.title("🚀 منصة التحليل الكمي - استراتيجية العوائد المرتفعة")
-st.sidebar.header("إعدادات المحفظة الهجومية")
+st.title("🚀 Quantitative Analysis Platform - High-Growth Strategy")
+st.sidebar.header("Aggressive Portfolio Settings")
 
-# قائمة الأسهم المختارة (stc، رسن، المطاحن العربية، علم)
-# سهم 'علم' (7203) هو المحرك الرئيسي لرفع العائد
+# Tickers: stc, Rasan, Arabian Mills, ELM
+# ELM (7203.SR) and Rasan (8313.SR) are the primary growth drivers
 tickers = ['7010.SR', '8313.SR', '2285.SR', '7203.SR']
 
-# تاريخ البداية
-start_date = st.sidebar.date_input("تاريخ بداية البيانات", value=pd.to_datetime("2024-06-15"))
+# Start Date Selector
+start_date = st.sidebar.date_input("Analysis Start Date", value=pd.to_datetime("2024-06-15"))
 
-# سحب البيانات
+# Data Fetching
 @st.cache_data
 def load_data(symbols, start):
     df = yf.download(symbols, start=start)['Close']
@@ -25,57 +25,60 @@ def load_data(symbols, start):
 data = load_data(tickers, start_date)
 
 if not data.empty:
-    st.subheader("📈 أداء الأسهم الهجومية (stc، رسن، المطاحن، علم)")
+    st.subheader("📈 Performance of Growth Assets (stc, Rasan, Mills, ELM)")
     st.line_chart(data)
 
     try:
-        # الحسابات الكمية المتقدمة
+        # Advanced Quantitative Calculations
+        # 1. Calculate Expected Annual Returns
         mu = expected_returns.mean_historical_return(data)
+        
+        # 2. Calculate Risk (Sample Covariance Matrix)
         S = risk_models.sample_cov(data)
         
-        # بناء الحدود الفعالة
+        # 3. Build Efficient Frontier
         ef = EfficientFrontier(mu, S)
         
-        # استراتيجية تعظيم نسبة شارب للوصول لعائد من خانتين
+        # 4. Strategy: Maximize Sharpe Ratio (The 'Aggressive' Move)
         weights = ef.max_sharpe() 
         cleaned_weights = ef.clean_weights()
 
-        # عرض التوزيع المقترح
-        st.subheader("⚖️ التوزيع الأمثل لتحقيق أعلى كفاءة (Max Sharpe)")
+        # Display Optimal Allocation
+        st.subheader("⚖️ Optimal Allocation for Maximum Efficiency (Max Sharpe)")
         cols = st.columns(len(tickers))
         
         for i, ticker in enumerate(tickers):
             if ticker == '7010.SR': name = "stc"
-            elif ticker == '8313.SR': name = "رسن"
-            elif ticker == '2285.SR': name = "المطاحن العربية"
-            else: name = "علم (ELM)"
+            elif ticker == '8313.SR': name = "Rasan"
+            elif ticker == '2285.SR': name = "Arabian Mills"
+            else: name = "ELM"
             
             cols[i].metric(name, f"{cleaned_weights[ticker]:.2%}")
 
-        # إحصائيات الأداء المستهدف
+        # Portfolio Performance Statistics
         ret, vol, sharpe = ef.portfolio_performance()
         
         st.markdown("---")
         col_res1, col_res2, col_res3 = st.columns(3)
         
-        # عرض العائد بلون بارز إذا تجاوز 10%
-        ret_label = "العائد السنوي المتوقع"
+        # Highlight Return if > 10%
         if ret >= 0.10:
-            col_res1.success(f"**{ret_label}: {ret:.2%}** ✅")
+            col_res1.success(f"**Expected Annual Return: {ret:.2%}** ✅")
         else:
-            col_res1.info(f"**{ret_label}: {ret:.2%}**")
+            col_res1.info(f"**Expected Annual Return: {ret:.2%}**")
             
-        col_res2.warning(f"**التذبذب (المخاطر): {vol:.2%}**")
-        col_res3.success(f"**نسبة شارب: {sharpe:.2f}**")
+        col_res2.warning(f"**Annual Volatility (Risk): {vol:.2%}**")
+        col_res3.success(f"**Sharpe Ratio: {sharpe:.2f}**")
 
     except Exception as e:
-        st.error(f"حدث خطأ في الحسابات: {e}")
-        st.info("نصيحة: إذا ظهر خطأ، جرب تغيير تاريخ البداية ليغطي فترة أطول.")
+        st.error(f"Calculation Error: {e}")
+        st.info("Tip: Try extending the start date to provide more data points.")
 else:
-    st.error("لم يتم العثور على بيانات.")
+    st.error("No data found. Please check tickers or date range.")
 
 st.sidebar.markdown("""
 ---
-**تحليل الاستراتيجية:**
-هذه النسخة لا تكتفي بتقليل المخاطر، بل تبحث عن "النقطة السحرية" التي تعطي أعلى عائد ممكن. سهم **علم** و **stc** يمثلان توازناً ممتازاً بين النمو السريع والأمان المالي.
+**Strategy Analysis:**
+This version shifts from 'Risk Minimization' to 'Efficiency Maximization'. 
+By optimizing the **Sharpe Ratio**, the model identifies the perfect balance between **Rasan's** momentum and **stc's** structural stability.
 """)
