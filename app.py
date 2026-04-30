@@ -3,9 +3,10 @@ import yfinance as yf
 from pypfopt import EfficientFrontier, risk_models, expected_returns
 import pandas as pd
 import numpy as np
+from datetime import datetime, timedelta
 
 # 1. Premium Light Interface
-st.set_page_config(page_title="Elite Moat Analysis", layout="wide")
+st.set_page_config(page_title="Institutional Backtesting", layout="wide")
 
 st.markdown("""
     <style>
@@ -16,16 +17,15 @@ st.markdown("""
         padding: 24px;
         border-radius: 4px;
         border: 1px solid #f1f5f9;
-        box-shadow: 0 1px 2px rgba(0,0,0,0.02);
     }
     div[data-testid="stTable"] { background-color: #ffffff; border-radius: 4px; border: 1px solid #f1f5f9; }
     </style>
     """, unsafe_allow_html=True)
 
 st.title("Strategic Asset Allocation")
-st.markdown("Precision Portfolio Engineering for Maximum Sharpe Efficiency")
+st.markdown("Dynamic Portfolio Backtesting and Optimization")
 
-# 2. Optimized Moat Portfolio (Confirmed Assets)
+# 2. Optimized Moat Portfolio
 moat_assets = {
     '2222.SR': {'name': 'Aramco', 'moat': 'Cost Leadership & Reserves'},
     '2223.SR': {'name': 'Luberef', 'moat': 'Base Oil Specialization'},
@@ -50,68 +50,75 @@ moat_assets = {
 tickers = list(moat_assets.keys())
 mapping = {k: v['name'] for k, v in moat_assets.items()}
 
-# 3. Optimization Parameters
+# 3. Sidebar Configuration (Backtesting Dates Added)
+st.sidebar.header("Backtest Configuration")
+start_date = st.sidebar.date_input("Start Date", value=pd.to_datetime("2024-06-15"))
+end_date = st.sidebar.date_input("End Date", value=datetime.now())
+
 capital = st.sidebar.number_input("Total Capital (SAR)", value=1000000)
-# Dynamic Weighting to force Sharpe Ratio > 1.0
-min_weight = 0.02
-max_weight = 0.09 # Reduced from 10% to force higher diversification and lower volatility
+max_weight = 0.09 
 risk_free = 0.04 
 
 @st.cache_data
-def get_clean_market_data(symbols):
+def get_backtest_data(symbols, start, end):
     try:
-        data = yf.download(symbols, start="2024-06-15", progress=False)['Close']
-        data = data.ffill().dropna(axis=1, thresh=len(data)*0.7).dropna()
+        # Fetching data for the specific backtest period
+        data = yf.download(symbols, start=start, end=end, progress=False)['Close']
+        data = data.ffill().dropna(axis=1, thresh=len(data)*0.5).dropna()
         actual_symbols = [s for s in symbols if s in data.columns]
         data.rename(columns=mapping, inplace=True)
         
         div_yields = {}
-        fallback = {'Bahri': 0.045, 'ELM': 0.015, 'stc': 0.052, 'Aramco': 0.048}
         for s in actual_symbols:
             name = mapping[s]
-            y = yf.Ticker(s).info.get('dividendYield', 0.03)
-            div_yields[name] = float(y) if y and y < 1 else fallback.get(name, 0.03)
+            y = yf.Ticker(s).info.get('dividendYield', 0.035)
+            div_yields[name] = float(y) if y and y < 1 else 0.035
         return data, div_yields
     except:
         return pd.DataFrame(), {}
 
-price_data, div_yields = get_clean_market_data(tickers)
+# 4. Execute Backtest
+if start_date < end_date:
+    price_data, div_yields = get_backtest_data(tickers, start_date, end_date)
 
-if not price_data.empty:
-    try:
-        # 4. Quantitative Optimization
-        mu = expected_returns.mean_historical_return(price_data)
-        S = risk_models.sample_cov(price_data)
-        
-        # Maximize Sharpe with tightened constraints
-        ef = EfficientFrontier(mu, S, weight_bounds=(min_weight, max_weight))
-        weights = ef.max_sharpe(risk_free_rate=risk_free)
-        clean_weights = ef.clean_weights()
+    if not price_data.empty:
+        st.subheader(f"Historical Performance ({start_date} to {end_date})")
+        st.line_chart(price_data)
 
-        # 5. Result Display
-        st.subheader("Elite Asset Allocation")
-        final_list = []
-        total_income = 0
-        for name, w in clean_weights.items():
-            if w > 0:
-                y = div_yields.get(name, 0.035)
-                income = (w * capital) * y
-                total_income += income
-                moat_desc = next((v['moat'] for k, v in moat_assets.items() if v['name'] == name), "")
-                final_list.append({
-                    "Asset": name, "Strategy": moat_desc, "Weight": f"{w:.2%}",
-                    "Yield": f"{y:.2%}", "Annual Income": f"{income:,.2f}"
-                })
-        st.table(pd.DataFrame(final_list))
+        try:
+            # Quantitative Optimization for the selected period
+            mu = expected_returns.mean_historical_return(price_data)
+            S = risk_models.sample_cov(price_data)
+            
+            ef = EfficientFrontier(mu, S, weight_bounds=(0.02, max_weight))
+            weights = ef.max_sharpe(risk_free_rate=risk_free)
+            clean_weights = ef.clean_weights()
 
-        # 6. Final Analytics
-        st.markdown("---")
-        ret, vol, sharpe = ef.portfolio_performance(risk_free_rate=risk_free)
-        c1, c2, c3, c4 = st.columns(4)
-        c1.metric("Expected Return", f"{ret:.2%}")
-        c2.metric("Portfolio Yield", f"{(total_income/capital):.2%}")
-        c3.metric("Annual Volatility", f"{vol:.2%}")
-        c4.metric("Sharpe Ratio", f"{sharpe:.2f}")
+            # 5. Result Display
+            st.subheader("Elite Asset Allocation (Backtested)")
+            final_list = []
+            total_income = 0
+            for name, w in clean_weights.items():
+                if w > 0:
+                    y = div_yields.get(name, 0.035)
+                    income = (w * capital) * y
+                    total_income += income
+                    final_list.append({
+                        "Asset": name, "Weight": f"{w:.2%}",
+                        "Historical Yield": f"{y:.2%}", "Annual Income": f"{income:,.2f}"
+                    })
+            st.table(pd.DataFrame(final_list))
 
-    except Exception as e:
-        st.error(f"Mathematical Error: {e}")
+            # 6. Final Analytics
+            st.markdown("---")
+            ret, vol, sharpe = ef.portfolio_performance(risk_free_rate=risk_free)
+            c1, c2, c3, c4 = st.columns(4)
+            c1.metric("Expected Return", f"{ret:.2%}")
+            c2.metric("Portfolio Yield", f"{(total_income/capital):.2%}")
+            c3.metric("Annual Volatility", f"{vol:.2%}")
+            c4.metric("Sharpe Ratio", f"{sharpe:.2f}")
+
+        except Exception as e:
+            st.error(f"Backtest Error: {e}")
+else:
+    st.error("Error: Start Date must be before End Date.")
