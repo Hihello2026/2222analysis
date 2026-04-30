@@ -6,7 +6,7 @@ import pandas as pd
 # إعدادات الصفحة
 st.set_page_config(page_title="Quantitative Equity Analysis", layout="wide")
 
-# تصميم واجهة مؤسسية
+# تصميم الواجهة
 st.markdown("""
     <style>
     .main { background-color: #f5f7f9; }
@@ -19,41 +19,42 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-st.title("Strategic Equity Analysis: Growth vs. Yield")
+st.title("Strategic Equity Analysis: Income & Stability")
 st.sidebar.header("Portfolio Configuration")
 
-# الأصول المختارة (تشمل الحمادي وتداول)
-tickers = ['7010.SR', '4007.SR', '2285.SR', '7203.SR', '2083.SR', '1111.SR']
+# الأصول المتبقية بعد حذف علم وتداول
+tickers = ['7010.SR', '4007.SR', '2285.SR', '2083.SR']
 mapping = {
     '7010.SR': 'stc',
     '4007.SR': 'Al Hammadi',
     '2285.SR': 'Arabian Mills',
-    '7203.SR': 'ELM',
-    '2083.SR': 'Marafiq',
-    '1111.SR': 'Tadawul'
+    '2083.SR': 'Marafiq'
 }
 
 # مدخلات المستخدم
 start_date = st.sidebar.date_input("Analysis Start Date", value=pd.to_datetime("2024-06-15"))
 portfolio_value = st.sidebar.number_input("Total Portfolio Value (SAR)", min_value=1000, value=1000000)
-risk_free_rate = st.sidebar.number_input("Risk-Free Rate (%)", value=2.0) / 100
+risk_free_rate = 0.02
 
 @st.cache_data
 def get_portfolio_data(symbols, start):
     try:
         price_df = yf.download(symbols, start=start)['Close']
-        price_df.rename(columns=mapping, inplace=True)
-        
+        if len(symbols) > 1:
+            price_df.rename(columns=mapping, inplace=True)
+        else:
+            price_df = pd.DataFrame(price_df)
+            price_df.columns = [mapping[symbols[0]]]
+            
         div_info = {}
         for sym in symbols:
             ticker_obj = yf.Ticker(sym)
             y_val = ticker_obj.info.get('dividendYield')
-            # تصحيح قياس التوزيعات
+            # تصحيح القياس
             if y_val:
                 div_info[mapping[sym]] = float(y_val) if y_val < 1 else float(y_val) / 100
             else:
                 div_info[mapping[sym]] = 0.0
-            
         return price_df, div_info
     except Exception:
         return pd.DataFrame(), {}
@@ -61,24 +62,23 @@ def get_portfolio_data(symbols, start):
 price_data, dividend_yields = get_portfolio_data(tickers, start_date)
 
 if not price_data.empty:
-    # 1. مخطط أسعار الأصول (Price Chart)
+    # 1. شارت أداء الأسعار
     st.subheader("Asset Price Performance (SAR)")
     st.line_chart(price_data)
 
     try:
-        # 2. النمذجة الرياضية (Optimization)
+        # 2. النمذجة الرياضية
         mu = expected_returns.mean_historical_return(price_data)
         S = risk_models.sample_cov(price_data)
         
-        # تحسين المحفظة بناءً على نسبة شارب مع فرض حد أدنى 5% للتنويع
         ef = EfficientFrontier(mu, S)
-        ef.add_constraint(lambda w: w >= 0.05)
+        ef.add_constraint(lambda w: w >= 0.05) # حد أدنى 5% لكل سهم
         weights = ef.max_sharpe(risk_free_rate=risk_free_rate) 
         target_weights = ef.clean_weights()
 
-        # 3. إدارة التوزيع وعوائد الحمادي والأسهم الأخرى
+        # 3. إدارة التوزيع والتحليل
         st.markdown("---")
-        st.subheader("Strategic Management & Yield Analysis")
+        st.subheader("Portfolio Management & Yield Analysis")
         
         mgmt_data = []
         total_income = 0
@@ -98,7 +98,7 @@ if not price_data.empty:
 
         st.table(pd.DataFrame(mgmt_data))
 
-        # 4. ملخص مؤشرات الأداء (بما في ذلك نسبة شارب)
+        # 4. ملخص الأداء ونسبة شارب
         st.markdown("---")
         st.subheader("Institutional Performance Metrics")
         ret, vol, sharpe = ef.portfolio_performance(risk_free_rate=risk_free_rate)
@@ -109,9 +109,7 @@ if not price_data.empty:
         m3.metric("Annual Volatility", f"{vol:.2%}")
         m4.metric("Sharpe Ratio", f"{sharpe:.2f}")
 
-        st.sidebar.info(f"The Sharpe Ratio of {sharpe:.2f} indicates the risk-adjusted return relative to the risk-free rate.")
-
     except Exception as e:
         st.error(f"Optimization Error: {e}")
 else:
-    st.error("Data retrieval failed. Please verify ticker symbols.")
+    st.error("Data retrieval failed.")
