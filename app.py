@@ -20,7 +20,7 @@ st.markdown("""
 st.title("Strategic Asset Allocation")
 st.markdown(f"**Date:** {datetime.now().strftime('%Y-%m-%d')} | **Status:** Moat Portfolio Active")
 
-# 2. تعريف بيانات الشركات (الخندق الاقتصادي والعوائد)
+# 2. تعريف بيانات الشركات
 moat_assets = {
     '2222.SR': {'name': 'Aramco', 'moat': 'Cost Leadership', 'yield': 0.065, 'default_target': 28.50},
     '2223.SR': {'name': 'Luberef', 'moat': 'Base Oil Specialist', 'yield': 0.072, 'default_target': 130.00},
@@ -46,7 +46,7 @@ moat_assets = {
 tickers = list(moat_assets.keys())
 mapping = {k: v['name'] for k, v in moat_assets.items()}
 
-# 3. إعدادات التيليجرام (باستخدام معرفاتك)
+# 3. إعدادات التيليجرام
 BOT_TOKEN = "8096609350:AAGDqysumgrjhlcOniM6D885j620QqCWpc8"
 CHAT_ID = "7172975999"
 
@@ -56,7 +56,7 @@ def send_telegram(msg):
     try: requests.post(url, data=payload)
     except: pass
 
-# 4. لوحة تحكم الأسعار المستهدفة (Sidebar) لجميع الشركات
+# 4. لوحة التحكم (Sidebar)
 st.sidebar.header("🎯 Target Price Controller")
 custom_targets = {}
 for t_id, info in moat_assets.items():
@@ -70,16 +70,22 @@ for t_id, info in moat_assets.items():
         step=0.1
     )
 
-# 5. محرك البيانات والتحليل
+# 5. محرك البيانات
 @st.cache_data
 def load_data(symbols):
-    data = yf.download(symbols + ['^TASI.SR'], start="2024-01-01", progress=False)['Close']
-    data = data.ffill().dropna()
-    return data.drop(columns=['^TASI.SR']).rename(columns=mapping), data['^TASI.SR']
+    try:
+        data = yf.download(symbols + ['^TASI.SR'], start="2024-01-01", progress=False)['Close']
+        data = data.ffill().dropna()
+        assets = data.drop(columns=['^TASI.SR']).rename(columns=mapping)
+        benchmark = data['^TASI.SR']
+        return assets, benchmark
+    except Exception as e:
+        st.error(f"Error fetching data: {e}")
+        return pd.DataFrame(), pd.Series()
 
 assets_data, tasi_data = load_data(tickers)
 
-# 6. عرض النتائج والتنبيهات
+# 6. عرض النتائج (تم إصلاح هذا الجزء تماماً)
 if not assets_data.empty:
     # حساب الأداء والتوزيغ
     mu = expected_returns.mean_historical_return(assets_data)
@@ -88,31 +94,52 @@ if not assets_data.empty:
     weights = ef.max_sharpe(risk_free_rate=0.04)
     clean_weights = ef.clean_weights()
 
-    # قسم التنبيهات (Alerts) لجميع الشركات الـ 19
+    # قسم التنبيهات (Alerts)
     st.markdown("---")
     st.subheader("Alerts")
     
-    # عرض التنبيهات في شكل شبكة (Grid)
-    rows = [list(custom_targets.keys())[i:i + 4] for i in range(0, len(custom_targets), 4)]
-    for row in rows:
+    ticker_names = list(custom_targets.keys())
+    for i in range(0, len(ticker_names), 4):
         cols = st.columns(4)
-        for i, name in enumerate(row):
-            price = assets_data[name].iloc[-1]
-            target = custom_targets[name]
-            with cols[i]:
-                if price <= target:
-                    st.error(f"🚨 BUY: {name}")
-                    st.write(f"Price: {price:.2f}")
-                    if st.button(f"Notify {name}", key=name):
-                        send_telegram(f"*Archer Alert* 🎯\n\nAsset: {name}\nPrice: {price:.2f}\nTarget: {target:.2f}")
-                        st.toast(f"Telegram sent for {name}")
-                else:
-                    st.success(f"✅ {name}")
-                    st.caption(f"Price: {price:.2f} (Target: {target:.2f})")
+        for j, name in enumerate(ticker_names[i:i+4]):
+            if name in assets_data.columns:
+                price = assets_data[name].iloc[-1]
+                target = custom_targets[name]
+                with cols[j]:
+                    if price <= target:
+                        st.error(f"🚨 BUY: {name}")
+                        st.write(f"Price: {price:.2f}")
+                        if st.button(f"Notify {name}", key=f"btn_{name}"):
+                            send_telegram(f"*Archer Alert* 🎯\n\nAsset: {name}\nPrice: {price:.2f}\nTarget: {target:.2f}")
+                            st.toast(f"Telegram sent for {name}")
+                    else:
+                        st.success(f"✅ {name}")
+                        st.caption(f"Price: {price:.2f} (Target: {target:.2f})")
 
-    # جدول المحفظة والرسوم البيانية
+    # جدول المحفظة
     st.markdown("---")
     st.subheader("Final Optimized Portfolio")
-    alloc_df = pd.DataFrame([{"Asset": n, "Weight": f"{w:.2%}", "Yield": f"{moat_assets[next(k for k,v in mapping.items() if v==n)]['yield']:.2%}"} 
-                             for n, w in clean_weights.items() if w > 0])
-    st.table(alloc_df)
+    
+    # بناء الجدول بدقة
+    alloc_list = []
+    for n, w in clean_weights.items():
+        if w > 0:
+            # البحث عن عائد الشركة
+            ticker_id = [k for k, v in mapping.items() if v == n][0]
+            y = moat_assets[ticker_id]['yield']
+            alloc_list.append({"Asset": n, "Weight": f"{w:.2%}", "Yield": f"{y:.2%}"})
+    
+    if alloc_list:
+        st.table(pd.DataFrame(alloc_list))
+
+    # الرسم البياني
+    st.markdown("---")
+    st.subheader("Performance vs TASI")
+    p_daily = assets_data.pct_change().dropna().dot(np.array([clean_weights.get(c, 0) for c in assets_data.columns]))
+    comparison_df = pd.DataFrame({
+        'Portfolio': (1 + p_daily).cumprod(),
+        'TASI': (1 + tasi_data.pct_change().dropna()).cumprod()
+    })
+    st.line_chart(comparison_df)
+else:
+    st.warning("Data is currently unavailable. Please check your connection or refresh.")
