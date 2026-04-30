@@ -126,4 +126,36 @@ if start_date < end_date:
         st.line_chart(pd.DataFrame({
             'Portfolio': (1 + portfolio_daily).cumprod(),
             'TASI Market': (1 + tasi_data.pct_change().dropna()).cumprod()
-        }))
+        })) 
+        # --- قسم نظام التنبيهات الذكي (Alert System) ---
+st.markdown("---")
+st.header("🎯 Archer Matrix Strategy Alerts")
+
+# تحديد أسعار الشراء المستهدفة (مثال بناءً على تحليل القيمة)
+target_prices = {
+    'Aramco': 28.50,
+    'stc': 36.00,
+    'BSF': 32.00,
+    'Luberef': 130.00,
+    'HMG': 270.00
+}
+
+alerts_found = False
+col_alerts = st.columns(len(target_prices))
+
+for i, (ticker_name, t_price) in enumerate(target_prices.items()):
+    # الحصول على السعر الحالي من البيانات التي تم سحبها سابقاً
+    current_price = assets_data[ticker_name].iloc[-1]
+    
+    with col_alerts[i]:
+        if current_price <= t_price:
+            st.error(f"🚨 BUY ALERT: {ticker_name}")
+            st.write(f"Current: {current_price:.2f}")
+            st.write(f"Target: {t_price:.2f}")
+            alerts_found = True
+        else:
+            st.success(f"✅ {ticker_name} Stable")
+            st.caption(f"Price: {current_price:.2f}")
+
+if not alerts_found:
+    st.info("No immediate buy signals. All assets are currently above target entry prices.")
