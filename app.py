@@ -3,22 +3,22 @@ import yfinance as yf
 from pypfopt import EfficientFrontier, risk_models, expected_returns
 import pandas as pd
 
-# إعدادات واجهة المستخدم
+# إعدادات الواجهة والنمط الموحد
 st.set_page_config(page_title="Quantitative Equity Analysis", layout="wide")
 st.title("Strategic Equity Analysis: Income & Stability")
 
-# تعريف الأصول والبيانات الاحتياطية (تجنباً لخطأ الـ 0%)
+# تعريف الأصول والبيانات الاحتياطية (لضمان استقرار العوائد)
 tickers = ['7010.SR', '4007.SR', '2285.SR', '2083.SR']
 mapping = {'7010.SR': 'stc', '4007.SR': 'Al Hammadi', '2285.SR': 'Arabian Mills', '2083.SR': 'Marafiq'}
-fallback_yields = {'7010.SR': 0.0516, '4007.SR': 0.0422, '2083.SR': 0.0525, '2285.SR': 0.0243}
+fallback_yields = {'7010.SR': 0.0516, '4007.SR': 0.0307, '2083.SR': 0.0521, '2285.SR': 0.0243}
 
 portfolio_value = st.sidebar.number_input("Total Portfolio Value (SAR)", min_value=1000, value=1000000)
 
 @st.cache_data
-def get_clean_data(symbols):
+def get_clean_institutional_data(symbols):
     try:
-        # جلب البيانات السعرية
-        df = yf.download(symbols, start="2024-06-15")['Close']
+        # جلب البيانات التاريخية
+        df = yf.download(symbols, start="2024-06-15", progress=False)['Close']
         df.rename(columns=mapping, inplace=True)
         
         div_info = {}
@@ -26,7 +26,7 @@ def get_clean_data(symbols):
             ticker_obj = yf.Ticker(sym)
             try:
                 y_val = ticker_obj.info.get('dividendYield')
-                # تصحيح رياضي حاسم: إذا كان الرقم > 1 (مثل 5.16) نقسمه على 100
+                # تصحيح Scaling Error برمجياً
                 if y_val and y_val > 0:
                     div_info[mapping[sym]] = float(y_val) if y_val < 1 else float(y_val) / 100
                 else:
@@ -37,18 +37,19 @@ def get_clean_data(symbols):
     except:
         return pd.DataFrame(), {}
 
-price_data, dividend_yields = get_clean_data(tickers)
+price_data, dividend_yields = get_clean_institutional_data(tickers)
 
 if not price_data.empty:
+    # عرض شارت الأداء
     st.subheader("Asset Price Performance (SAR)")
     st.line_chart(price_data)
 
     try:
-        # التحسين الرياضي (Optimization)
+        # التحسين الرياضي للمحفظة
         mu = expected_returns.mean_historical_return(price_data)
         S = risk_models.sample_cov(price_data)
         
-        # قيد الوزن: حد أدنى 5% وحد أقصى 70% لضمان التوازن
+        # فرض قيود مؤسسية: حد أدنى 5% وحد أقصى 70%
         ef = EfficientFrontier(mu, S, weight_bounds=(0.05, 0.70))
         weights = ef.max_sharpe(risk_free_rate=0.02)
         target_weights = ef.clean_weights()
@@ -72,7 +73,7 @@ if not price_data.empty:
 
         st.table(pd.DataFrame(mgmt_data))
 
-        # مقاييس الأداء النهائية
+        # ملخص مقاييس الأداء
         st.markdown("---")
         st.subheader("Institutional Performance Metrics")
         ret, vol, sharpe = ef.portfolio_performance(risk_free_rate=0.02)
@@ -84,4 +85,4 @@ if not price_data.empty:
         m4.metric("Sharpe Ratio", f"{sharpe:.2f}")
 
     except Exception as e:
-        st.error(f"Mathematical Adjustment: {e}")
+        st.error(f"Mathematical Error: {e}")
