@@ -2,11 +2,11 @@ import streamlit as st
 import yfinance as yf
 from pypfopt import EfficientFrontier, risk_models, expected_returns
 import pandas as pd
+import time
 
-# إعدادات الصفحة
+# إعدادات الصفحة الاحترافية
 st.set_page_config(page_title="Quantitative Equity Analysis", layout="wide")
 
-# تصميم الواجهة
 st.markdown("""
     <style>
     .main { background-color: #f5f7f9; }
@@ -22,7 +22,7 @@ st.markdown("""
 st.title("Strategic Equity Analysis: Income & Stability")
 st.sidebar.header("Portfolio Configuration")
 
-# الأصول المتبقية بعد حذف علم وتداول
+# الأصول المختارة: stc، الحمادي، المطاحن العربية، المرافق
 tickers = ['7010.SR', '4007.SR', '2285.SR', '2083.SR']
 mapping = {
     '7010.SR': 'stc',
@@ -31,15 +31,21 @@ mapping = {
     '2083.SR': 'Marafiq'
 }
 
-# مدخلات المستخدم
+# مدخلات المحفظة
 start_date = st.sidebar.date_input("Analysis Start Date", value=pd.to_datetime("2024-06-15"))
 portfolio_value = st.sidebar.number_input("Total Portfolio Value (SAR)", min_value=1000, value=1000000)
 risk_free_rate = 0.02
 
-@st.cache_data
+@st.cache_data(show_spinner="جاري تحديث بيانات السوق...")
 def get_portfolio_data(symbols, start):
     try:
-        price_df = yf.download(symbols, start=start)['Close']
+        # محاولة جلب البيانات مع مهلة زمنية قصيرة
+        price_df = yf.download(symbols, start=start, progress=False)['Close']
+        
+        if price_df.empty:
+            return pd.DataFrame(), {}
+
+        # إعادة تسمية الأعمدة
         if len(symbols) > 1:
             price_df.rename(columns=mapping, inplace=True)
         else:
@@ -49,34 +55,39 @@ def get_portfolio_data(symbols, start):
         div_info = {}
         for sym in symbols:
             ticker_obj = yf.Ticker(sym)
-            y_val = ticker_obj.info.get('dividendYield')
-            # تصحيح القياس
-            if y_val:
-                div_info[mapping[sym]] = float(y_val) if y_val < 1 else float(y_val) / 100
-            else:
+            # جلب عائد التوزيعات مع معالجة الأخطاء
+            try:
+                y_val = ticker_obj.info.get('dividendYield')
+                if y_val:
+                    div_info[mapping[sym]] = float(y_val) if y_val < 1 else float(y_val) / 100
+                else:
+                    div_info[mapping[sym]] = 0.0
+            except:
                 div_info[mapping[sym]] = 0.0
+                
         return price_df, div_info
-    except Exception:
+    except Exception as e:
+        st.sidebar.error(f"Connection Error: {e}")
         return pd.DataFrame(), {}
 
+# جلب البيانات
 price_data, dividend_yields = get_portfolio_data(tickers, start_date)
 
 if not price_data.empty:
-    # 1. شارت أداء الأسعار
     st.subheader("Asset Price Performance (SAR)")
     st.line_chart(price_data)
 
     try:
-        # 2. النمذجة الرياضية
+        # الحسابات الكمية للمحفظة
         mu = expected_returns.mean_historical_return(price_data)
         S = risk_models.sample_cov(price_data)
         
         ef = EfficientFrontier(mu, S)
-        ef.add_constraint(lambda w: w >= 0.05) # حد أدنى 5% لكل سهم
+        # فرض حد أدنى للتنويع (5%)
+        ef.add_constraint(lambda w: w >= 0.05)
         weights = ef.max_sharpe(risk_free_rate=risk_free_rate) 
         target_weights = ef.clean_weights()
 
-        # 3. إدارة التوزيع والتحليل
         st.markdown("---")
         st.subheader("Portfolio Management & Yield Analysis")
         
@@ -98,7 +109,6 @@ if not price_data.empty:
 
         st.table(pd.DataFrame(mgmt_data))
 
-        # 4. ملخص الأداء ونسبة شارب
         st.markdown("---")
         st.subheader("Institutional Performance Metrics")
         ret, vol, sharpe = ef.portfolio_performance(risk_free_rate=risk_free_rate)
@@ -110,6 +120,6 @@ if not price_data.empty:
         m4.metric("Sharpe Ratio", f"{sharpe:.2f}")
 
     except Exception as e:
-        st.error(f"Optimization Error: {e}")
+        st.error(f"Mathematical Error: {e}")
 else:
-    st.error("Data retrieval failed.")
+    st.warning("⚠️ لم يتم العثور على بيانات. يرجى التأكد من اتصال الإنترنت أو المحاولة مرة أخرى لاحقاً.")
