@@ -5,8 +5,8 @@ import pandas as pd
 import numpy as np
 from datetime import datetime
 
-# 1. Institutional Dashboard Styling
-st.set_page_config(page_title="Elite Moat Analysis", layout="wide")
+# 1. Institutional UI & Styling
+st.set_page_config(page_title="Elite Equity Analysis", layout="wide")
 
 st.markdown("""
     <style>
@@ -17,7 +17,6 @@ st.markdown("""
         padding: 20px;
         border-radius: 4px;
         border: 1px solid #e2e8f0;
-        box-shadow: 0 1px 3px rgba(0,0,0,0.02);
     }
     div[data-testid="stTable"] { background-color: #ffffff; border-radius: 4px; }
     </style>
@@ -26,14 +25,14 @@ st.markdown("""
 st.title("Strategic Asset Allocation")
 st.markdown("Precision Portfolio Engineering: Growth & Dividends vs. TASI Benchmark")
 
-# 2. Verified Asset Portfolio (The "Moat" Strategy)
+# 2. Updated Portfolio (Replacing Al Rajhi with BSF)
 moat_assets = {
     '2222.SR': {'name': 'Aramco', 'moat': 'Cost Leadership'},
     '2223.SR': {'name': 'Luberef', 'moat': 'Base Oil Specialist'},
     '2083.SR': {'name': 'Marafiq', 'moat': 'Utility Monopoly'},
     '5110.SR': {'name': 'SEC', 'moat': 'National Grid'},
     '1111.SR': {'name': 'Tadawul', 'moat': 'Sole Operator'},
-    '1120.SR': {'name': 'Al Rajhi', 'moat': 'Deposit Hegemony'},
+    '1050.SR': {'name': 'BSF', 'moat': 'Corporate Banking Lead'}, # Added Saudi French Bank
     '1180.SR': {'name': 'SNB', 'moat': 'Giga-Project Capital'},
     '8313.SR': {'name': 'Rasan', 'moat': 'Network Effect'},
     '7217.SR': {'name': 'ELM', 'moat': 'Exclusive Data Integration'},
@@ -52,7 +51,7 @@ moat_assets = {
 tickers = list(moat_assets.keys())
 mapping = {k: v['name'] for k, v in moat_assets.items()}
 
-# 3. Dynamic Sidebar for Backtesting
+# 3. Sidebar Configuration
 st.sidebar.header("Backtest Configuration")
 start_date = st.sidebar.date_input("Start Date", value=pd.to_datetime("2024-06-15"))
 end_date = st.sidebar.date_input("End Date", value=datetime.now())
@@ -61,15 +60,14 @@ capital = st.sidebar.number_input("Total Capital (SAR)", value=1000000)
 @st.cache_data
 def get_strategic_data(symbols, start, end):
     try:
-        # Fetch Market Prices
         data = yf.download(symbols + ['^TASI.SR'], start=start, end=end, progress=False)['Close']
         data = data.ffill().dropna(axis=1, thresh=len(data)*0.5).dropna()
         
-        # Real Dividend Yields Mapping (Updated 2026 Projections)
+        # Projections for 2026 Dividend Yields
         real_yields = {
             'Aramco': 0.065, 'stc': 0.052, 'Bahri': 0.048, 
-            'SABIC AN': 0.044, 'SEC': 0.040, 'HMG': 0.019,
-            'Luberef': 0.072, 'Al Rajhi': 0.034, 'SNB': 0.039,
+            'BSF': 0.045, 'SNB': 0.039, 'Luberef': 0.072,
+            'SEC': 0.040, 'HMG': 0.019, 'SABIC AN': 0.044,
             'Marafiq': 0.038, 'SGS': 0.042, 'Tadawul': 0.028,
             'Almarai': 0.025, 'SAL': 0.022, 'ELM': 0.015,
             'Rasan': 0.012, 'Maaden': 0.000, 'Leejam': 0.024,
@@ -79,7 +77,6 @@ def get_strategic_data(symbols, start, end):
         div_yields = {mapping[s]: real_yields.get(mapping[s], 0.035) for s in symbols if s in data.columns}
         benchmark = data['^TASI.SR']
         assets = data.drop(columns=['^TASI.SR']).rename(columns=mapping)
-        
         return assets, benchmark, div_yields
     except:
         return pd.DataFrame(), pd.Series(), {}
@@ -89,19 +86,15 @@ if start_date < end_date:
     assets_data, tasi_data, div_yields = get_strategic_data(tickers, start_date, end_date)
 
     if not assets_data.empty:
-        # Optimization Logic: Maximize Sharpe Ratio
         mu = expected_returns.mean_historical_return(assets_data)
         S = risk_models.CovarianceShrinkage(assets_data).ledoit_wolf()
         
-        # Concentration Cap at 9% to reduce idiosyncratic risk
         ef = EfficientFrontier(mu, S, weight_bounds=(0.02, 0.09))
         weights = ef.max_sharpe(risk_free_rate=0.04)
         clean_weights = ef.clean_weights()
 
-        # Performance Metrics
         p_ret, p_vol, p_sharpe = ef.portfolio_performance(risk_free_rate=0.04)
         
-        # Dividend & Income Calculation
         total_income = 0
         final_table = []
         for name, w in clean_weights.items():
@@ -109,13 +102,10 @@ if start_date < end_date:
                 y = div_yields.get(name, 0.035)
                 income = (w * capital) * y
                 total_income += income
-                moat_logic = next((v['moat'] for k, v in moat_assets.items() if v['name'] == name), "N/A")
+                logic = next((v['moat'] for k, v in moat_assets.items() if v['name'] == name), "N/A")
                 final_table.append({
-                    "Asset": name,
-                    "Moat Strategy": moat_logic,
-                    "Weight": f"{w:.2%}",
-                    "Div. Yield": f"{y:.2%}",
-                    "Est. Income (SAR)": f"{income:,.2f}"
+                    "Asset": name, "Moat Strategy": logic, "Weight": f"{w:.2%}",
+                    "Div. Yield": f"{y:.2%}", "Est. Income (SAR)": f"{income:,.2f}"
                 })
 
         # 5. Dashboard Output
@@ -127,15 +117,13 @@ if start_date < end_date:
         m4.metric("Sharpe Ratio", f"{p_sharpe:.2f}")
 
         st.markdown("---")
-        st.subheader("Detailed Asset Allocation")
+        st.subheader("Detailed Allocation (BSF Update)")
         st.table(pd.DataFrame(final_table))
 
         # Comparison Growth Chart
-        st.markdown("---")
         st.subheader("Growth Comparison: Portfolio vs. TASI Index")
         portfolio_daily = assets_data.pct_change().dropna().dot(np.array([clean_weights.get(c, 0) for c in assets_data.columns]))
-        comparison_df = pd.DataFrame({
-            'Your Portfolio': (1 + portfolio_daily).cumprod(),
-            'TASI Market Index': (1 + tasi_data.pct_change().dropna()).cumprod()
-        })
-        st.line_chart(comparison_df)
+        st.line_chart(pd.DataFrame({
+            'Portfolio': (1 + portfolio_daily).cumprod(),
+            'TASI Market': (1 + tasi_data.pct_change().dropna()).cumprod()
+        }))
