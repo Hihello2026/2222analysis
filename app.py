@@ -2,13 +2,13 @@ import streamlit as st
 import yfinance as yf
 from pypfopt import EfficientFrontier, risk_models, expected_returns
 import pandas as pd
+import numpy as np
 
 # 1. إعدادات المنصة
 st.set_page_config(page_title="Saudi Moat Portfolio", layout="wide")
 st.title("Saudi Economic Moat Portfolio 2026")
-st.markdown("تحليل المحفظة القائم على الشركات ذات المزايا التنافسية المستدامة (Economic Moats)")
 
-# 2. تعريف الأصول والخنادق (القاموس الشامل)
+# 2. القاموس الكامل للأسهم (الخنادق)
 moat_assets = {
     '2222.SR': {'name': 'أرامكو', 'moat': 'ندرة التكلفة والاحتياطي'},
     '2223.SR': {'name': 'لوبريف', 'moat': 'تخصص زيوت الأساس'},
@@ -33,75 +33,87 @@ moat_assets = {
 tickers = list(moat_assets.keys())
 mapping = {k: v['name'] for k, v in moat_assets.items()}
 
-# 3. إعدادات المحفظة
+# 3. إعدادات المستخدم في الشريط الجانبي
 portfolio_value = st.sidebar.number_input("إجمالي قيمة المحفظة (ريال)", value=1000000)
-min_weight = st.sidebar.slider("الحد الأدنى لكل سهم (%)", 1, 5, 2) / 100
-max_weight = st.sidebar.slider("الحد الأقصى لكل سهم (%)", 10, 30, 15) / 100
+min_w = st.sidebar.slider("الحد الأدنى (%)", 1, 3, 2) / 100
+max_w = st.sidebar.slider("الحد الأقصى (%)", 5, 20, 10) / 100
 
 @st.cache_data
-def get_moat_data(symbols):
+def get_safe_data(symbols):
     try:
-        df = yf.download(symbols, start="2024-01-01", progress=False)['Close']
-        df.rename(columns=mapping, inplace=True)
+        # جلب البيانات وتنظيفها فوراً من أي قيم NaN
+        data = yf.download(symbols, start="2024-06-15", progress=False)['Close']
+        data = data.ffill().dropna(axis=1, thresh=len(data)*0.7).dropna() # حذف الأعمدة التي تفتقر لـ 30% من البيانات
+        
+        actual_tickers = [t for t in symbols if t in data.columns]
+        data.rename(columns=mapping, inplace=True)
         
         div_info = {}
-        for sym in symbols:
+        for sym in actual_tickers:
             ticker = yf.Ticker(sym)
-            y = ticker.info.get('dividendYield', 0)
-            # تصحيح Scaling Error
-            div_info[mapping[sym]] = float(y) if y and y < 1 else (float(y)/100 if y else 0.03) # 3% كافتراضي
-        return df, div_info
+            try:
+                y = ticker.info.get('dividendYield', 0)
+                # تصحيح الـ Scaling واستخدام 3% كبديل في حال فقدان البيانات
+                div_info[mapping[sym]] = float(y) if y and 0 < y < 1 else (float(y)/100 if y and y >= 1 else 0.03)
+            except:
+                div_info[mapping[sym]] = 0.03
+        return data, div_info
     except:
         return pd.DataFrame(), {}
 
-price_data, dividend_yields = get_moat_data(tickers)
+price_data, dividend_yields = get_safe_data(tickers)
 
 if not price_data.empty:
-    st.subheader("الأداء السعري لشركات الخنادق الاستراتيجية")
+    st.subheader("تحليل الأداء السعري (الأصول المتاحة)")
     st.line_chart(price_data)
 
     try:
-        # 4. التحسين الكمي (Mean-Variance Optimization)
+        # 4. الحسابات الرياضية مع معالجة القيم المتطرفة
         mu = expected_returns.mean_historical_return(price_data)
         S = risk_models.sample_cov(price_data)
         
-        ef = EfficientFrontier(mu, S, weight_bounds=(min_weight, max_weight))
+        # التأكد من عدم وجود قيم NaN في المصفوفات قبل المعالجة
+        mu = mu.fillna(mu.mean())
+        S = S.fillna(0)
+
+        ef = EfficientFrontier(mu, S, weight_bounds=(min_w, max_w))
         weights = ef.max_sharpe(risk_free_rate=0.02)
         target_weights = ef.clean_weights()
 
-        # 5. جدول إدارة المحفظة الشامل
+        # 5. الجدول النهائي
         st.markdown("---")
-        st.subheader("توزيع الأصول بناءً على القوة التنافسية والعوائد")
-        
-        final_table = []
+        final_list = []
         total_income = 0
         
-        for ticker, info in moat_assets.items():
-            name = info['name']
-            weight = target_weights.get(name, 0)
-            y_rate = dividend_yields.get(name, 0)
-            income = (weight * portfolio_value) * y_rate
-            total_income += income
-            
-            final_table.append({
-                "الشركة": name,
-                "نوع الخندق الاقتصادي": info['moat'],
-                "الوزن المقترح": f"{weight:.2%}",
-                "عائد التوزيع": f"{y_rate:.2%}",
-                "الدخل السنوي المتوقع": f"{income:,.2f}"
-            })
+        for name, weight in target_weights.items():
+            if weight > 0:
+                y_rate = dividend_yields.get(name, 0.03)
+                income = (weight * portfolio_value) * y_rate
+                total_income += income
+                
+                # البحث عن الخندق من القاموس الأصلي عبر الاسم
+                moat_type = next((v['moat'] for k, v in moat_assets.items() if v['name'] == name), "قوة تنافسية")
+                
+                final_list.append({
+                    "الشركة": name,
+                    "نوع الخندق": moat_type,
+                    "الوزن": f"{weight:.2%}",
+                    "العائد": f"{y_rate:.2%}",
+                    "الدخل (ريال)": f"{income:,.2f}"
+                })
 
-        st.table(pd.DataFrame(final_table))
+        st.table(pd.DataFrame(final_list))
 
-        # 6. مؤشرات الأداء الكلية
+        # 6. المؤشرات الكلية
         st.markdown("---")
         ret, vol, sharpe = ef.portfolio_performance(risk_free_rate=0.02)
-        
-        col1, col2, col3, col4 = st.columns(4)
-        col1.metric("نمو رأس المال المتوقع", f"{ret:.2%}")
-        col2.metric("عائد المحفظة النقدي", f"{(total_income/portfolio_value):.2%}")
-        col3.metric("مستوى التذبذب (المخاطرة)", f"{vol:.2%}")
-        col4.metric("نسبة شارب (كفاءة العائد)", f"{sharpe:.2f}")
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("النمو الرأسمالي المتوقع", f"{ret:.2%}")
+        c2.metric("عائد التوزيعات", f"{(total_income/portfolio_value):.2%}")
+        c3.metric("تذبذب المحفظة", f"{vol:.2%}")
+        c4.metric("نسبة شارب", f"{sharpe:.2f}")
 
     except Exception as e:
-        st.error(f"خطأ في الحسابات: {e}")
+        st.error(f"حدث خطأ رياضي أثناء التحسين: {e}")
+        st.info("نصيحة: قد يكون ذلك بسبب قصر تاريخ تداول بعض الشركات الجديدة. حاول تقليل 'الحد الأدنى' للوزن.")
+        
