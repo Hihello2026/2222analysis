@@ -2,16 +2,16 @@ import streamlit as st
 import yfinance as yf
 from pypfopt import EfficientFrontier, risk_models, expected_returns
 import pandas as pd
+import seaborn as sns
+import matplotlib.pyplot as plt
 
-# Page Configuration for a professional look
+# Page Configuration
 st.set_page_config(page_title="Quantitative Equity Analysis", layout="wide")
 
-# Custom CSS to refine the UI
+# Custom CSS for a professional look
 st.markdown("""
     <style>
-    .main {
-        background-color: #f5f7f9;
-    }
+    .main { background-color: #f5f7f9; }
     .stMetric {
         background-color: #ffffff;
         padding: 15px;
@@ -24,18 +24,24 @@ st.markdown("""
 st.title("Quantitative Equity Analysis Platform")
 st.sidebar.header("Portfolio Configuration")
 
-# Tickers: stc, Rasan, Arabian Mills, ELM, and Marafiq
+# Tickers
 tickers = ['7010.SR', '8313.SR', '2285.SR', '7203.SR', '2083.SR']
+mapping = {
+    '7010.SR': 'stc',
+    '8313.SR': 'Rasan',
+    '2285.SR': 'Arabian Mills',
+    '7203.SR': 'ELM',
+    '2083.SR': 'Marafiq'
+}
 
-# Analysis Parameters
 start_date = st.sidebar.date_input("Analysis Start Date", value=pd.to_datetime("2024-06-15"))
 risk_free_rate = st.sidebar.number_input("Risk-Free Rate (%)", value=2.0) / 100
 
-# Data Acquisition
 @st.cache_data
 def load_data(symbols, start):
     try:
         df = yf.download(symbols, start=start)['Close']
+        df.rename(columns=mapping, inplace=True)
         return df
     except Exception:
         return pd.DataFrame()
@@ -43,8 +49,20 @@ def load_data(symbols, start):
 data = load_data(tickers, start_date)
 
 if not data.empty:
+    # 1. Asset Performance Chart
     st.subheader("Asset Performance Visualization")
     st.line_chart(data)
+
+    # 2. Correlation Matrix Section
+    st.markdown("---")
+    st.subheader("Risk Management: Asset Correlation Matrix")
+    st.write("This heatmap illustrates the statistical relationship between assets. Lower correlation indicates superior diversification benefits.")
+    
+    corr_matrix = data.pct_change().corr()
+    fig, ax = plt.subplots(figsize=(10, 6))
+    sns.heatmap(corr_matrix, annot=True, cmap='RdYlGn', fmt='.2f', ax=ax, center=0)
+    plt.title("Asset Correlation Heatmap")
+    st.pyplot(fig)
 
     try:
         # Quantitative Modeling
@@ -58,20 +76,11 @@ if not data.empty:
 
         st.markdown("---")
         st.subheader("Optimal Portfolio Allocation")
-        st.write("Calculated using the Maximum Sharpe Ratio objective to optimize risk-adjusted returns.")
         
-        # Displaying weights in a clean grid
+        # Displaying weights
         cols = st.columns(len(tickers))
-        for i, ticker in enumerate(tickers):
-            mapping = {
-                '7010.SR': 'stc',
-                '8313.SR': 'Rasan',
-                '2285.SR': 'Arabian Mills',
-                '7203.SR': 'ELM',
-                '2083.SR': 'Marafiq'
-            }
-            name = mapping.get(ticker, ticker)
-            cols[i].metric(label=name, value=f"{cleaned_weights[ticker]:.2%}")
+        for i, ticker_name in enumerate(mapping.values()):
+            cols[i].metric(label=ticker_name, value=f"{cleaned_weights.get(ticker_name, 0):.2%}")
 
         # Performance Metrics Section
         st.markdown("---")
@@ -81,20 +90,18 @@ if not data.empty:
         m1, m2, m3 = st.columns(3)
         m1.write(f"**Expected Annual Return**")
         m1.title(f"{ret:.2%}")
-        
         m2.write(f"**Annual Volatility**")
         m2.title(f"{vol:.2%}")
-        
         m3.write(f"**Sharpe Ratio**")
         m3.title(f"{sharpe:.2f}")
 
     except Exception as e:
         st.error(f"Mathematical Optimization Error: {e}")
 else:
-    st.error("Data retrieval failed. Verify connection and ticker symbols.")
+    st.error("Data retrieval failed.")
 
 st.sidebar.markdown("""
 ---
 **Technical Methodology**
-This platform utilizes the **Modern Portfolio Theory (MPT)** framework. By optimizing the Sharpe Ratio, the system identifies the tangency portfolio on the Efficient Frontier, maximizing the excess return per unit of volatility.
+By incorporating the **Correlation Matrix**, the model assesses systemic risk. Lower asset correlation reduces total portfolio variance without diminishing expected returns.
 """)
