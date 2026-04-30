@@ -8,6 +8,7 @@ import matplotlib.pyplot as plt
 # Page Configuration
 st.set_page_config(page_title="Quantitative Equity Analysis", layout="wide")
 
+# Custom CSS for Institutional UI
 st.markdown("""
     <style>
     .main { background-color: #f5f7f9; }
@@ -17,17 +18,18 @@ st.markdown("""
         border-radius: 5px;
         border: 1px solid #e1e4e8;
     }
-    .rebalance-box {
+    .rebalance-card {
         padding: 20px;
-        border-radius: 10px;
-        background-color: #fff4e6;
-        border-left: 5px solid #ff922b;
+        border-radius: 8px;
+        background-color: #ffffff;
+        border-left: 5px solid #007bff;
+        margin-bottom: 10px;
     }
     </style>
     """, unsafe_allow_html=True)
 
 st.title("Quantitative Equity Analysis Platform")
-st.sidebar.header("Portfolio Configuration")
+st.sidebar.header("Portfolio Settings")
 
 # Tickers and Mapping
 tickers = ['7010.SR', '8313.SR', '2285.SR', '7203.SR', '2083.SR']
@@ -39,10 +41,11 @@ mapping = {
     '2083.SR': 'Marafiq'
 }
 
-# Sidebar Inputs
+# Sidebar Inputs for Management
 start_date = st.sidebar.date_input("Analysis Start Date", value=pd.to_datetime("2024-06-15"))
 portfolio_value = st.sidebar.number_input("Total Portfolio Value (SAR)", min_value=1000, value=100000)
-rebalance_threshold = st.sidebar.slider("Rebalancing Threshold (%)", 1, 10, 5) / 100
+rebalance_threshold = st.sidebar.slider("Drift Threshold for Alerts (%)", 1, 10, 5) / 100
+risk_free_rate = 0.02
 
 @st.cache_data
 def load_data(symbols, start):
@@ -56,14 +59,13 @@ def load_data(symbols, start):
 data = load_data(tickers, start_date)
 
 if not data.empty:
-    # 1. Visualization & Correlation
+    # 1. Performance & Correlation
     st.subheader("Asset Performance Visualization")
     st.line_chart(data)
 
     st.markdown("---")
-    col_chart, col_corr = st.columns([1, 1])
-    
-    with col_corr:
+    col_a, col_b = st.columns([1, 1])
+    with col_a:
         st.subheader("Asset Correlation Matrix")
         corr_matrix = data.pct_change().corr()
         fig, ax = plt.subplots(figsize=(8, 5))
@@ -71,50 +73,44 @@ if not data.empty:
         st.pyplot(fig)
 
     try:
-        # 2. Optimization Logic
+        # 2. Optimization
         mu = expected_returns.mean_historical_return(data)
         S = risk_models.sample_cov(data)
         ef = EfficientFrontier(mu, S)
-        weights = ef.max_sharpe() 
+        weights = ef.max_sharpe(risk_free_rate=risk_free_rate) 
         target_weights = ef.clean_weights()
 
-        # 3. Automated Rebalancing Alerts Logic
+        # 3. Automated Rebalancing Alerts
         st.markdown("---")
         st.subheader("Automated Rebalancing Management")
+        st.write("Real-time monitoring of portfolio drift relative to target allocations.")
         
-        # Simulate Current Weights (in a real app, these would come from your brokerage API)
-        # Here we assume a slight drift for demonstration
-        st.write("System comparison between Current Market Weights and Model Targets.")
-        
-        rebalance_data = []
+        rebalance_list = []
         for asset, t_weight in target_weights.items():
-            current_price = data[asset].iloc[-1]
-            initial_price = data[asset].iloc[0]
-            # Simulating drift based on price action
-            simulated_current_weight = t_weight * (current_price / initial_price) 
-            drift = simulated_current_weight - t_weight
+            # Calculating simulated drift based on recent price action
+            price_change = (data[asset].iloc[-1] / data[asset].iloc[0]) - 1
+            current_weight = t_weight * (1 + price_change)
+            # Normalize simulated weight
+            drift = current_weight - t_weight
             
-            status = "Optimal"
-            if drift > rebalance_threshold: status = "Overweight (Sell)"
-            elif drift < -rebalance_threshold: status = "Underweight (Buy)"
+            action = "Maintain"
+            if drift > rebalance_threshold: action = "Sell / Trim"
+            elif drift < -rebalance_threshold: action = "Buy / Add"
             
-            rebalance_data.append({
+            rebalance_list.append({
                 "Asset": asset,
-                "Target Weight": f"{t_weight:.2%}",
-                "Current Drift": f"{drift:+.2%}",
-                "Status": status,
-                "Action Amount (SAR)": f"{abs(drift * portfolio_value):,.2f}"
+                "Target %": f"{t_weight:.2%}",
+                "Drift %": f"{drift:+.2%}",
+                "Status": action,
+                "Required Action (SAR)": f"{abs(drift * portfolio_value):,.2f}"
             })
 
-        rebalance_df = pd.DataFrame(rebalance_data)
-        
-        # Highlight Alerts
-        st.table(rebalance_df)
+        st.table(pd.DataFrame(rebalance_list))
 
-        # 4. Portfolio Analytics
+        # 4. Analytics Summary
         st.markdown("---")
-        st.subheader("Portfolio Performance Metrics")
-        ret, vol, sharpe = ef.portfolio_performance()
+        st.subheader("Portfolio Analytics")
+        ret, vol, sharpe = ef.portfolio_performance(risk_free_rate=risk_free_rate)
         
         m1, m2, m3 = st.columns(3)
         m1.metric("Expected Annual Return", f"{ret:.2%}")
