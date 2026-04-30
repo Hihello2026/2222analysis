@@ -6,7 +6,7 @@ import numpy as np
 from datetime import datetime
 import requests
 
-# 1. Institutional Design & Theming
+# 1. Dashboard UI Configuration
 st.set_page_config(page_title="Archer Matrix | archb26", layout="wide")
 
 st.markdown("""
@@ -24,9 +24,9 @@ st.markdown("""
     """, unsafe_allow_html=True)
 
 st.title("Strategic Asset Allocation")
-st.markdown(f"**Current Date:** {datetime.now().strftime('%Y-%m-%d')} | **Status:** Financial Moat Optimized")
+st.markdown(f"**Archive Date:** {datetime.now().strftime('%Y-%m-%d')} | **Status:** Moat Optimized")
 
-# 2. Verified Asset Portfolio (BSF Integration)
+# 2. Strategy Mapping (BSF & Diversified Moats)
 moat_assets = {
     '2222.SR': {'name': 'Aramco', 'moat': 'Cost Leadership', 'yield': 0.065},
     '2223.SR': {'name': 'Luberef', 'moat': 'Base Oil Specialist', 'yield': 0.072},
@@ -52,7 +52,7 @@ moat_assets = {
 tickers = list(moat_assets.keys())
 mapping = {k: v['name'] for k, v in moat_assets.items()}
 
-# 3. Execution Engine
+# 3. Data Core
 @st.cache_data
 def get_live_data(symbols, start, end):
     try:
@@ -61,18 +61,17 @@ def get_live_data(symbols, start, end):
         benchmark = data['^TASI.SR']
         assets = data.drop(columns=['^TASI.SR']).rename(columns=mapping)
         return assets, benchmark
-    except Exception as e:
-        st.error(f"Data Fetch Error: {e}")
+    except:
         return pd.DataFrame(), pd.Series()
 
-# Sidebar Settings
+# Sidebar
 st.sidebar.header("Backtest Configuration")
 start_date = st.sidebar.date_input("Start Date", value=pd.to_datetime("2024-06-15"))
 end_date = st.sidebar.date_input("End Date", value=datetime.now())
 capital = st.sidebar.number_input("Total Capital (SAR)", value=1000000)
 
-# Telegram Config (Optional - replace with your secrets)
-BOT_TOKEN = "YOUR_TELEGRAM_BOT_TOKEN"
+# Telegram Messenger
+BOT_TOKEN = "YOUR_BOT_TOKEN"
 CHAT_ID = "YOUR_CHAT_ID"
 
 def send_telegram(msg):
@@ -80,21 +79,21 @@ def send_telegram(msg):
     try: requests.get(url)
     except: pass
 
-# 4. Processing & Dashboard
+# 4. Analytics Output
 if start_date < end_date:
     assets_data, tasi_data = get_live_data(tickers, start_date, end_date)
 
     if not assets_data.empty:
-        # Portfolio Optimization
+        # Optimization
         mu = expected_returns.mean_historical_return(assets_data)
         S = risk_models.CovarianceShrinkage(assets_data).ledoit_wolf()
         ef = EfficientFrontier(mu, S, weight_bounds=(0.02, 0.09))
         weights = ef.max_sharpe(risk_free_rate=0.04)
         clean_weights = ef.clean_weights()
 
+        # KPIs
         p_ret, p_vol, p_sharpe = ef.portfolio_performance(risk_free_rate=0.04)
         
-        # Metrics Display
         st.subheader("Performance & Dividend Intelligence")
         m1, m2, m3, m4 = st.columns(4)
         m1.metric("Capital Return", f"{p_ret:.2%}")
@@ -104,9 +103,9 @@ if start_date < end_date:
         m3.metric("Annual Div. Income", f"{(total_div * capital):,.2f} SAR")
         m4.metric("Sharpe Ratio", f"{p_sharpe:.2f}")
 
-        # --- SMART ALERT SYSTEM (Fixing KeyError) ---
+        # --- Updated Section Header: Alerts ---
         st.markdown("---")
-        st.subheader("🎯 Archer Matrix Live Alerts")
+        st.subheader("Alerts")
         
         target_configs = {
             'Aramco': 28.50, 'stc': 36.00, 'BSF': 32.00, 
@@ -128,7 +127,7 @@ if start_date < end_date:
                         st.success(f"✅ {name}")
                         st.caption(f"Price: {price:.2f}")
 
-        # Allocation Table
+        # Detailed Stats
         st.markdown("---")
         st.subheader("Detailed Asset Allocation")
         alloc_data = []
@@ -144,7 +143,7 @@ if start_date < end_date:
                 })
         st.table(pd.DataFrame(alloc_data))
 
-        # Chart
+        # Charting
         st.markdown("---")
         st.subheader("Growth Chart: Portfolio vs. TASI")
         p_daily = assets_data.pct_change().dropna().dot(np.array([clean_weights.get(c, 0) for c in assets_data.columns]))
