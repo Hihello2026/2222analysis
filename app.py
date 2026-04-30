@@ -3,10 +3,10 @@ import yfinance as yf
 from pypfopt import EfficientFrontier, risk_models, expected_returns
 import pandas as pd
 
-# Page Configuration
+# Page Configuration for a professional institutional look
 st.set_page_config(page_title="Quantitative Equity Analysis", layout="wide")
 
-# Custom CSS for Professional UI
+# Custom CSS for a clean, banking-style UI
 st.markdown("""
     <style>
     .main { background-color: #f5f7f9; }
@@ -46,13 +46,17 @@ def get_portfolio_data(symbols, start):
         price_df = yf.download(symbols, start=start)['Close']
         price_df.rename(columns=mapping, inplace=True)
         
-        # Download dividend data with standardization
+        # Download and standardize dividend data
         div_info = {}
         for sym in symbols:
             ticker_obj = yf.Ticker(sym)
             y_val = ticker_obj.info.get('dividendYield')
-            # Standardize yfinance yield (converts 0.04 to 4% or handles missing data)
-            div_info[mapping[sym]] = float(y_val) if y_val is not None else 0.0
+            # Fix: Ensure yield is treated as a decimal (e.g., 0.05 for 5%)
+            # If yfinance returns 5.0, we divide by 100. If 0.05, we keep it.
+            if y_val:
+                div_info[mapping[sym]] = float(y_val) if y_val < 1 else float(y_val) / 100
+            else:
+                div_info[mapping[sym]] = 0.0
             
         return price_df, div_info
     except Exception:
@@ -65,11 +69,11 @@ if not price_data.empty:
     st.line_chart(price_data)
 
     try:
-        # 1. Quantitative Modeling
+        # 1. Quantitative Modeling (Mean-Variance Optimization)
         mu = expected_returns.mean_historical_return(price_data)
         S = risk_models.sample_cov(price_data)
         
-        # 2. Optimization with 5% Floor (Minimum Allocation Constraint)
+        # 2. Optimization with 5% Minimum Floor per Asset
         ef = EfficientFrontier(mu, S)
         ef.add_constraint(lambda w: w >= 0.05)
         weights = ef.max_sharpe(risk_free_rate=risk_free_rate) 
@@ -82,7 +86,7 @@ if not price_data.empty:
         for i, ticker_name in enumerate(mapping.values()):
             cols[i].metric(label=ticker_name, value=f"{target_weights.get(ticker_name, 0):.2%}")
 
-        # 4. Rebalancing & Yield Management
+        # 4. Automated Management & Corrected Yield Analysis
         st.markdown("---")
         st.subheader("Automated Management & Yield Analysis")
         
@@ -90,7 +94,7 @@ if not price_data.empty:
         total_income = 0
         
         for asset, t_weight in target_weights.items():
-            # Handle drift calculation (handling potential NaN for new listings)
+            # Current value based on performance
             current_p = price_data[asset].iloc[-1]
             initial_p = price_data[asset].iloc[0]
             perf = (current_p / initial_p) - 1 if initial_p > 0 else 0
@@ -98,10 +102,10 @@ if not price_data.empty:
             current_w = t_weight * (1 + perf)
             drift = current_w - t_weight
             
-            # Standardized Dividend Logic
+            # Corrected Dividend Calculation
             y_rate = dividend_yields.get(asset, 0)
-            asset_value = t_weight * portfolio_value
-            annual_income = asset_value * y_rate
+            asset_sar_value = t_weight * portfolio_value
+            annual_income = asset_sar_value * y_rate
             total_income += annual_income
             
             status = "Optimal"
@@ -119,9 +123,9 @@ if not price_data.empty:
 
         st.table(pd.DataFrame(mgmt_data))
 
-        # 5. Portfolio Performance Summary
+        # 5. Institutional Portfolio Summary
         st.markdown("---")
-        st.subheader("Institutional Portfolio Summary")
+        st.subheader("Portfolio Performance Summary")
         ret, vol, sharpe = ef.portfolio_performance(risk_free_rate=risk_free_rate)
         
         m1, m2, m3, m4 = st.columns(4)
@@ -131,12 +135,6 @@ if not price_data.empty:
         m4.metric("Sharpe Ratio", f"{sharpe:.2f}")
 
     except Exception as e:
-        st.error(f"Mathematical Optimization Error: {e}")
+        st.error(f"Optimization Error: {e}")
 else:
-    st.error("Data retrieval failed. Please check your network or ticker symbols.")
-
-st.sidebar.markdown("""
----
-**Technical Methodology**
-Utilizing **Modern Portfolio Theory (MPT)** to maximize risk-adjusted returns (Sharpe Ratio). A **5% floor** is enforced to ensure structural diversification across all selected assets.
-""")
+    st.error("Data retrieval failed. Please check your connection.")
