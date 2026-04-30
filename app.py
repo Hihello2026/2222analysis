@@ -43,19 +43,19 @@ rebalance_threshold = st.sidebar.slider("Drift Threshold (%)", 1, 10, 5) / 100
 def get_portfolio_data(symbols, start):
     try:
         # Download price data
-        data = yf.download(symbols, start=start)['Close']
-        data.rename(columns=mapping, inplace=True)
+        price_df = yf.download(symbols, start=start)['Close']
+        price_df.rename(columns=mapping, inplace=True)
         
-        # Download dividend data
+        # Download dividend data with validation
         div_info = {}
         for sym in symbols:
             ticker_obj = yf.Ticker(sym)
-            # Get trailing annual dividend yield
-            yield_val = ticker_obj.info.get('dividendYield', 0)
-            if yield_val is None: yield_val = 0
-            div_info[mapping[sym]] = yield_val
+            # yfinance dividendYield is often a decimal (0.04 for 4%)
+            y_val = ticker_obj.info.get('dividendYield')
+            # Fallback to 0 if data is missing or None
+            div_info[mapping[sym]] = float(y_val) if y_val else 0.0
             
-        return data, div_info
+        return price_df, div_info
     except Exception:
         return pd.DataFrame(), {}
 
@@ -70,7 +70,7 @@ if not price_data.empty:
         mu = expected_returns.mean_historical_return(price_data)
         S = risk_models.sample_cov(price_data)
         
-        # 2. Optimization with 5% floor constraint
+        # 2. Optimization with 5% floor
         ef = EfficientFrontier(mu, S)
         ef.add_constraint(lambda w: w >= 0.05)
         weights = ef.max_sharpe(risk_free_rate=risk_free_rate) 
@@ -83,50 +83,55 @@ if not price_data.empty:
         for i, ticker_name in enumerate(mapping.values()):
             cols[i].metric(label=ticker_name, value=f"{target_weights.get(ticker_name, 0):.2%}")
 
-        # 4. Rebalancing & Dividend Income Management
+        # 4. Automated Management & Corrected Yield Analysis
         st.markdown("---")
         st.subheader("Automated Management & Yield Analysis")
         
         mgmt_data = []
-        total_expected_dividend = 0
+        total_income = 0
         
         for asset, t_weight in target_weights.items():
-            performance = (price_data[asset].iloc[-1] / price_data[asset].iloc[0])
-            current_weight = t_weight * performance
-            drift = current_weight - t_weight
+            # Handle NaN values for newer listings by filling with 0
+            current_p = price_data[asset].iloc[-1]
+            initial_p = price_data[asset].iloc[0]
             
-            # Dividend Calculation
-            div_rate = dividend_yields.get(asset, 0)
-            annual_income = (t_weight * portfolio_value) * div_rate
-            total_expected_dividend += annual_income
+            perf = (current_p / initial_p) - 1 if initial_p > 0 else 0
+            current_w = t_weight * (1 + perf)
+            drift = current_w - t_weight
+            
+            # Dividend Logic
+            y_rate = dividend_yields.get(asset, 0)
+            asset_value = t_weight * portfolio_value
+            annual_income = asset_value * y_rate
+            total_income += annual_income
             
             status = "Optimal"
-            if drift > rebalance_threshold: status = "Overweight"
-            elif drift < -rebalance_threshold: status = "Underweight"
+            if drift > rebalance_threshold: status = "Overweight (Sell)"
+            elif drift < -rebalance_threshold: status = "Underweight (Buy)"
             
             mgmt_data.append({
                 "Asset": asset,
                 "Target %": f"{t_weight:.2%}",
                 "Drift %": f"{drift:+.2%}",
-                "Div. Yield": f"{div_rate:.2%}",
+                "Div. Yield": f"{y_rate:.2%}",
                 "Est. Annual Income (SAR)": f"{annual_income:,.2f}",
                 "Action": status
             })
 
         st.table(pd.DataFrame(mgmt_data))
 
-        # 5. Portfolio Analytics
+        # 5. Portfolio Analytics Summary
         st.markdown("---")
-        st.subheader("Portfolio Performance Summary")
+        st.subheader("Institutional Portfolio Summary")
         ret, vol, sharpe = ef.portfolio_performance(risk_free_rate=risk_free_rate)
         
         m1, m2, m3, m4 = st.columns(4)
         m1.metric("Expected Cap. Gain", f"{ret:.2%}")
-        m2.metric("Portfolio Yield", f"{(total_expected_dividend/portfolio_value):.2%}")
+        m2.metric("Portfolio Yield", f"{(total_income/portfolio_value):.2%}")
         m3.metric("Annual Volatility", f"{vol:.2%}")
         m4.metric("Sharpe Ratio", f"{sharpe:.2f}")
 
     except Exception as e:
-        st.error(f"Optimization Error: {e}")
+        st.error(f"Mathematical Error: {e}")
 else:
     st.error("Data retrieval failed.")
