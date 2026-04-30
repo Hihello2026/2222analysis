@@ -3,86 +3,105 @@ import yfinance as yf
 from pypfopt import EfficientFrontier, risk_models, expected_returns
 import pandas as pd
 
-# إعدادات الواجهة والنمط الموحد
-st.set_page_config(page_title="Quantitative Equity Analysis", layout="wide")
-st.title("Strategic Equity Analysis: Income & Stability")
+# 1. إعدادات المنصة
+st.set_page_config(page_title="Saudi Moat Portfolio", layout="wide")
+st.title("Saudi Economic Moat Portfolio 2026")
+st.markdown("تحليل المحفظة القائم على الشركات ذات المزايا التنافسية المستدامة (Economic Moats)")
 
-# تعريف الأصول والبيانات الاحتياطية (لضمان استقرار العوائد)
-tickers = ['7010.SR', '4007.SR', '2285.SR', '2083.SR']
-mapping = {'7010.SR': 'stc', '4007.SR': 'Al Hammadi', '2285.SR': 'Arabian Mills', '2083.SR': 'Marafiq'}
-fallback_yields = {'7010.SR': 0.0516, '4007.SR': 0.0307, '2083.SR': 0.0521, '2285.SR': 0.0243}
+# 2. تعريف الأصول والخنادق (القاموس الشامل)
+moat_assets = {
+    '2222.SR': {'name': 'أرامكو', 'moat': 'ندرة التكلفة والاحتياطي'},
+    '2223.SR': {'name': 'لوبريف', 'moat': 'تخصص زيوت الأساس'},
+    '2083.SR': {'name': 'مرافق', 'moat': 'احتكار طبيعي (الجبيل وينبع)'},
+    '1111.SR': {'name': 'تداول', 'moat': 'خندق تنظيمي (المشغل الوحيد)'},
+    '1120.SR': {'name': 'الراجحي', 'moat': 'ودائع مجانية وهيمنة الأفراد'},
+    '1180.SR': {'name': 'الأهلي', 'moat': 'تمويل المشاريع العملاقة'},
+    '8313.SR': {'name': 'رسن', 'moat': 'تأثير الشبكة الرقمي'},
+    '7217.SR': {'name': 'عِلم', 'moat': 'وصول حصري للبيانات الحكومية'},
+    '7010.SR': {'name': 'stc', 'moat': 'بنية تحتية وبيانات ضخمة'},
+    '4263.SR': {'name': 'سأل - SAL', 'moat': 'هيمنة الشحن الجوي'},
+    '4031.SR': {'name': 'الخدمات الأرضية', 'moat': 'محرك المطارات التشغيلي'},
+    '8210.SR': {'name': 'بوبا', 'moat': 'تخصص طبي وقوة تفاوضية'},
+    '4007.SR': {'name': 'الحمادي', 'moat': 'كفاءة مالية وتمركز استراتيجي'},
+    '1211.SR': {'name': 'معادن', 'moat': 'حقوق تنقيب حصرية'},
+    '2020.SR': {'name': 'سابك للمغذيات', 'moat': 'كفاءة إنتاج عالمية'},
+    '2200.SR': {'name': 'أنابيب السعودية', 'moat': 'مورد استراتيجي للطاقة'},
+    '2280.SR': {'name': 'المراعي', 'moat': 'أضخم شبكة توزيع مبرد'},
+    '1830.SR': {'name': 'وقت اللياقة', 'moat': 'سيطرة وانتشار قطاع اللياقة'}
+}
 
-portfolio_value = st.sidebar.number_input("Total Portfolio Value (SAR)", min_value=1000, value=1000000)
+tickers = list(moat_assets.keys())
+mapping = {k: v['name'] for k, v in moat_assets.items()}
+
+# 3. إعدادات المحفظة
+portfolio_value = st.sidebar.number_input("إجمالي قيمة المحفظة (ريال)", value=1000000)
+min_weight = st.sidebar.slider("الحد الأدنى لكل سهم (%)", 1, 5, 2) / 100
+max_weight = st.sidebar.slider("الحد الأقصى لكل سهم (%)", 10, 30, 15) / 100
 
 @st.cache_data
-def get_clean_institutional_data(symbols):
+def get_moat_data(symbols):
     try:
-        # جلب البيانات التاريخية
-        df = yf.download(symbols, start="2024-06-15", progress=False)['Close']
+        df = yf.download(symbols, start="2024-01-01", progress=False)['Close']
         df.rename(columns=mapping, inplace=True)
         
         div_info = {}
         for sym in symbols:
-            ticker_obj = yf.Ticker(sym)
-            try:
-                y_val = ticker_obj.info.get('dividendYield')
-                # تصحيح Scaling Error برمجياً
-                if y_val and y_val > 0:
-                    div_info[mapping[sym]] = float(y_val) if y_val < 1 else float(y_val) / 100
-                else:
-                    div_info[mapping[sym]] = fallback_yields.get(sym, 0.0)
-            except:
-                div_info[mapping[sym]] = fallback_yields.get(sym, 0.0)
+            ticker = yf.Ticker(sym)
+            y = ticker.info.get('dividendYield', 0)
+            # تصحيح Scaling Error
+            div_info[mapping[sym]] = float(y) if y and y < 1 else (float(y)/100 if y else 0.03) # 3% كافتراضي
         return df, div_info
     except:
         return pd.DataFrame(), {}
 
-price_data, dividend_yields = get_clean_institutional_data(tickers)
+price_data, dividend_yields = get_moat_data(tickers)
 
 if not price_data.empty:
-    # عرض شارت الأداء
-    st.subheader("Asset Price Performance (SAR)")
+    st.subheader("الأداء السعري لشركات الخنادق الاستراتيجية")
     st.line_chart(price_data)
 
     try:
-        # التحسين الرياضي للمحفظة
+        # 4. التحسين الكمي (Mean-Variance Optimization)
         mu = expected_returns.mean_historical_return(price_data)
         S = risk_models.sample_cov(price_data)
         
-        # فرض قيود مؤسسية: حد أدنى 5% وحد أقصى 70%
-        ef = EfficientFrontier(mu, S, weight_bounds=(0.05, 0.70))
+        ef = EfficientFrontier(mu, S, weight_bounds=(min_weight, max_weight))
         weights = ef.max_sharpe(risk_free_rate=0.02)
         target_weights = ef.clean_weights()
 
+        # 5. جدول إدارة المحفظة الشامل
         st.markdown("---")
-        st.subheader("Portfolio Management & Yield Analysis")
-        mgmt_data = []
+        st.subheader("توزيع الأصول بناءً على القوة التنافسية والعوائد")
+        
+        final_table = []
         total_income = 0
         
-        for asset, t_weight in target_weights.items():
-            y_rate = dividend_yields.get(asset, 0)
-            annual_income = (t_weight * portfolio_value) * y_rate
-            total_income += annual_income
-            mgmt_data.append({
-                "Asset": asset,
-                "Target Weight": f"{t_weight:.2%}",
-                "Div. Yield": f"{y_rate:.2%}",
-                "Est. Annual Income (SAR)": f"{annual_income:,.2f}",
-                "Action": "Optimal"
+        for ticker, info in moat_assets.items():
+            name = info['name']
+            weight = target_weights.get(name, 0)
+            y_rate = dividend_yields.get(name, 0)
+            income = (weight * portfolio_value) * y_rate
+            total_income += income
+            
+            final_table.append({
+                "الشركة": name,
+                "نوع الخندق الاقتصادي": info['moat'],
+                "الوزن المقترح": f"{weight:.2%}",
+                "عائد التوزيع": f"{y_rate:.2%}",
+                "الدخل السنوي المتوقع": f"{income:,.2f}"
             })
 
-        st.table(pd.DataFrame(mgmt_data))
+        st.table(pd.DataFrame(final_table))
 
-        # ملخص مقاييس الأداء
+        # 6. مؤشرات الأداء الكلية
         st.markdown("---")
-        st.subheader("Institutional Performance Metrics")
         ret, vol, sharpe = ef.portfolio_performance(risk_free_rate=0.02)
         
-        m1, m2, m3, m4 = st.columns(4)
-        m1.metric("Expected Cap. Gain", f"{ret:.2%}")
-        m2.metric("Portfolio Yield", f"{(total_income/portfolio_value):.2%}")
-        m3.metric("Annual Volatility", f"{vol:.2%}")
-        m4.metric("Sharpe Ratio", f"{sharpe:.2f}")
+        col1, col2, col3, col4 = st.columns(4)
+        col1.metric("نمو رأس المال المتوقع", f"{ret:.2%}")
+        col2.metric("عائد المحفظة النقدي", f"{(total_income/portfolio_value):.2%}")
+        col3.metric("مستوى التذبذب (المخاطرة)", f"{vol:.2%}")
+        col4.metric("نسبة شارب (كفاءة العائد)", f"{sharpe:.2f}")
 
     except Exception as e:
-        st.error(f"Mathematical Error: {e}")
+        st.error(f"خطأ في الحسابات: {e}")
