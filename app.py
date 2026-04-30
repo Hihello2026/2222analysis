@@ -25,7 +25,7 @@ st.markdown("""
 st.title("Strategic Asset Allocation")
 st.markdown("Advanced Quantitative Optimization for Sharpe Ratio Efficiency")
 
-# 2. Updated Moat Assets Portfolio (Removed Saudi Pipes, Added ELM)
+# 2. Updated Moat Assets Portfolio (Added Bahri & ELM)
 moat_assets = {
     '2222.SR': {'name': 'Aramco', 'moat': 'Cost Leadership & Reserves'},
     '2223.SR': {'name': 'Luberef', 'moat': 'Base Oil Specialization'},
@@ -35,8 +35,9 @@ moat_assets = {
     '1120.SR': {'name': 'Al Rajhi', 'moat': 'Zero-Cost Deposit Hegemony'},
     '1180.SR': {'name': 'SNB', 'moat': 'Strategic Giga-Project Capital'},
     '8313.SR': {'name': 'Rasan', 'moat': 'Digital InsurTech Network Effect'},
-    '7217.SR': {'name': 'ELM', 'moat': 'Exclusive Data/Government Integration'}, # Added ELM
+    '7217.SR': {'name': 'ELM', 'moat': 'Exclusive Data Integration'},
     '7010.SR': {'name': 'stc', 'moat': 'Digital Backbone & Big Data'},
+    '4030.SR': {'name': 'Bahri', 'moat': 'National Maritime Logistics Lead'}, # Added Bahri
     '4263.SR': {'name': 'SAL', 'moat': 'Air Cargo Logistics Monopoly'},
     '4031.SR': {'name': 'SGS', 'moat': 'Airport Ground Operations'},
     '4007.SR': {'name': 'Al Hammadi', 'moat': 'Strategic Healthcare Delivery'},
@@ -51,8 +52,7 @@ mapping = {k: v['name'] for k, v in moat_assets.items()}
 
 # 3. Sidebar Configuration
 capital = st.sidebar.number_input("Total Capital (SAR)", value=1000000)
-# Strict 10% cap to enforce diversification and lower volatility
-max_w = 0.10 
+max_w = 0.10 # Capping at 10% to reduce volatility and improve Sharpe
 risk_free = 0.04 
 
 @st.cache_data
@@ -64,8 +64,8 @@ def get_institutional_data(symbols):
         data.rename(columns=mapping, inplace=True)
         
         div_yields = {}
-        # Default fallback yields for institutional accuracy
-        fallback = {'ELM': 0.015, 'stc': 0.052, 'Aramco': 0.048}
+        # Institutional yield fallbacks
+        fallback = {'Bahri': 0.045, 'ELM': 0.015, 'stc': 0.052, 'Aramco': 0.048}
         
         for s in actual_symbols:
             name = mapping[s]
@@ -79,17 +79,16 @@ price_data, div_yields = get_institutional_data(tickers)
 
 if not price_data.empty:
     try:
-        # 4. Optimization Engine for High Sharpe
+        # 4. Optimization Engine
         mu = expected_returns.mean_historical_return(price_data)
         S = risk_models.sample_cov(price_data)
         
-        # Solving for Maximum Sharpe Ratio
         ef = EfficientFrontier(mu, S, weight_bounds=(0.02, max_w))
         weights = ef.max_sharpe(risk_free_rate=risk_free)
         clean_weights = ef.clean_weights()
 
-        # 5. Dashboard Table
-        st.subheader("Optimized Portfolio Structure")
+        # 5. Output Results
+        st.subheader("Institutional Portfolio Allocation")
         final_table = []
         total_income = 0
         for name, w in clean_weights.items():
@@ -99,12 +98,12 @@ if not price_data.empty:
                 total_income += income
                 moat = next((v['moat'] for k, v in moat_assets.items() if v['name'] == name), "")
                 final_table.append({
-                    "Asset": name, "Moat Strategy": moat, "Weight": f"{w:.2%}",
+                    "Asset": name, "Moat Rationale": moat, "Weight": f"{w:.2%}",
                     "Yield": f"{y:.2%}", "Annual Income": f"{income:,.2f}"
                 })
         st.table(pd.DataFrame(final_table))
 
-        # 6. Performance Summary
+        # 6. Performance Metrics
         st.markdown("---")
         ret, vol, sharpe = ef.portfolio_performance(risk_free_rate=risk_free)
         c1, c2, c3, c4 = st.columns(4)
@@ -114,4 +113,4 @@ if not price_data.empty:
         c4.metric("Sharpe Ratio", f"{sharpe:.2f}")
 
     except Exception as e:
-        st.error(f"Optimization Failure: {e}")
+        st.error(f"Computation error: {e}")
