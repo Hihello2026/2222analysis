@@ -150,7 +150,7 @@ if not assets_data.empty:
     alloc_data = []
     for n, w in clean_weights.items():
         if w > 0:
-            t_id = [k for k, v in mapping.items() if v == n][0] 
+            t_id = [k for k, v in mapping.items() if v == n][0]
             alloc_data.append({"Asset": n, "Weight": f"{w:.2%}", "Yield": f"{moat_assets[t_id]['yield']:.2%}"})
     st.table(pd.DataFrame(alloc_data))
 
