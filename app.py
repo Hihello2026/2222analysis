@@ -20,7 +20,7 @@ st.markdown("""
 st.title("Strategic Asset Allocation")
 st.markdown(f"**Archive Date:** {datetime.now().strftime('%Y-%m-%d')} | **Status:** Moat Optimized")
 
-# 2. Portfolio Configuration (The 19 Strategic Assets)
+# 2. Portfolio Configuration (Including BSF and specific yields)
 moat_assets = {
     '2222.SR': {'name': 'Aramco', 'moat': 'Cost Leadership', 'yield': 0.065},
     '2223.SR': {'name': 'Luberef', 'moat': 'Base Oil Specialist', 'yield': 0.072},
@@ -46,7 +46,7 @@ moat_assets = {
 tickers = list(moat_assets.keys())
 mapping = {k: v['name'] for k, v in moat_assets.items()}
 
-# 3. Telegram Messaging Core
+# 3. Telegram Messaging Core (Verified IDs)
 BOT_TOKEN = "8096609350:AAGDqysumgrjhlcOniM6D885j620QqCWpc8"
 CHAT_ID = "7172975999"
 
@@ -63,7 +63,7 @@ def send_telegram(msg):
 def get_live_data(symbols, start, end):
     try:
         data = yf.download(symbols + ['^TASI.SR'], start=start, end=end, progress=False)['Close']
-        data = data.ffill().dropna()
+        data = data.ffill().dropna(axis=1, thresh=len(data)*0.5).dropna()
         benchmark = data['^TASI.SR']
         assets = data.drop(columns=['^TASI.SR']).rename(columns=mapping)
         return assets, benchmark
@@ -75,14 +75,6 @@ st.sidebar.header("Backtest Configuration")
 start_date = st.sidebar.date_input("Start Date", value=pd.to_datetime("2024-06-15"))
 end_date = st.sidebar.date_input("End Date", value=datetime.now())
 capital = st.sidebar.number_input("Total Capital (SAR)", value=1000000)
-
-# Disclaimer in Sidebar
-st.sidebar.markdown("---")
-st.sidebar.warning("""
-**إخلاء مسؤولية / Disclaimer**
-هذه المنصة لأغراض تعليمية فقط وليست دعوة للاستثمار.
-Educational purposes only; not an investment invitation.
-""")
 
 # 5. UI Logic and Output
 if start_date < end_date:
