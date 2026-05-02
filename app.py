@@ -3,10 +3,10 @@ import yfinance as yf
 from pypfopt import EfficientFrontier, risk_models, expected_returns
 import pandas as pd
 import numpy as np
-from datetime import datetime
+from datetime import datetime, timedelta
 import requests
 
-# 1. إعدادات الهوية والتصميم
+# 1. إعدادات الهوية والتصميم (Modern Industrial Minimalism)
 st.set_page_config(page_title="Archer Matrix | archb26", layout="wide")
 
 st.markdown("""
@@ -26,9 +26,10 @@ st.markdown("""
     """, unsafe_allow_html=True)
 
 st.title("Strategic Asset Allocation")
+# استخدام تاريخ آخر إغلاق متاح لضمان استقرار العرض
 st.markdown(f"**Archive Date:** {datetime.now().strftime('%Y-%m-%d')} | **Status:** Moat Optimized")
 
-# 2. تكوين المحفظة (19 شركة)
+# 2. بيانات الشركات الـ 19 (The Strategic Core)
 moat_assets = {
     '2222.SR': {'name': 'Aramco', 'moat': 'Cost Leadership', 'yield': 0.065, 'target': 28.50},
     '2223.SR': {'name': 'Luberef', 'moat': 'Base Oil Specialist', 'yield': 0.072, 'target': 130.00},
@@ -63,36 +64,36 @@ def send_telegram(msg, chat_id):
     try: requests.post(url, data=payload)
     except: pass
 
-# 4. معالجة البيانات
+# 4. محرك البيانات المحدث (Data Engine)
 @st.cache_data(ttl=3600)
-def get_live_data(symbols, start, end):
+def load_market_data(symbols, start):
     try:
-        raw = yf.download(symbols + ['^TASI.SR'], start=start, end=end, progress=False)['Close']
+        # طلب البيانات لغاية تاريخ اليوم
+        raw = yf.download(symbols + ['^TASI.SR'], start=start, progress=False)['Close']
+        if raw.empty: return pd.DataFrame(), pd.Series()
+        
+        # معالجة بيانات أيام العطلات (ffill تملأ الفراغات بآخر سعر متاح)
         data = raw.ffill().dropna()
-        if data.empty: return pd.DataFrame(), pd.Series()
         benchmark = data['^TASI.SR']
         assets = data.drop(columns=['^TASI.SR']).rename(columns=mapping)
         return assets, benchmark
-    except: return pd.DataFrame(), pd.Series()
+    except:
+        return pd.DataFrame(), pd.Series()
 
 # Sidebar
-st.sidebar.header("Configuration")
+st.sidebar.header("Archer Config")
 start_date = st.sidebar.date_input("Start Date", value=pd.to_datetime("2024-06-15"))
-capital = st.sidebar.number_input("Total Capital (SAR)", value=1000000)
-user_id = st.sidebar.text_input("Telegram ID", value="7172975999")
+capital = st.sidebar.number_input("Capital (SAR)", value=1000000)
+tg_id = st.sidebar.text_input("Telegram ID", value="7172975999")
 
 st.sidebar.markdown("---")
-st.sidebar.warning("""
-**Disclaimer / إخلاء مسؤولية**
-ليست دعوة للاستثمار. قرارك مسؤوليتك.
-Not financial advice. Invest at your own risk.
-""")
+st.sidebar.warning("**Disclaimer:** Educational purposes only.")
 
-# 5. التنفيذ والعرض
-assets_data, tasi_data = get_live_data(tickers, start_date, datetime.now())
+# 5. التنفيذ والعرض (Logic Flow)
+assets_data, tasi_data = load_market_data(tickers, start_date)
 
 if not assets_data.empty:
-    # التحسين (Optimization)
+    # حسابات المحفظة
     mu = expected_returns.mean_historical_return(assets_data)
     S = risk_models.CovarianceShrinkage(assets_data).ledoit_wolf()
     ef = EfficientFrontier(mu, S, weight_bounds=(0.02, 0.09))
@@ -100,43 +101,37 @@ if not assets_data.empty:
     clean_weights = ef.clean_weights()
     p_ret, p_vol, p_sharpe = ef.portfolio_performance(risk_free_rate=0.04)
     
-    # المقاييس الرئيسية
-    m1, m2, m3, m4 = st.columns(4)
-    m1.metric("Expected Return", f"{p_ret:.2%}")
-    total_yield = sum([clean_weights.get(mapping[t], 0) * moat_assets[t]['yield'] for t in tickers])
-    m2.metric("Portfolio Yield", f"{total_yield:.2%}")
-    m3.metric("Est. Annual Div.", f"{(total_yield * capital):,.0f} SAR")
-    m4.metric("Sharpe Ratio", f"{p_sharpe:.2f}")
+    # ملخص الأداء
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Exp. Return", f"{p_ret:.2%}")
+    p_yield = sum([clean_weights.get(mapping[t], 0) * moat_assets[t]['yield'] for t in tickers])
+    c2.metric("Portfolio Yield", f"{p_yield:.2%}")
+    c3.metric("Annual Div.", f"{(p_yield * capital):,.0f} SAR")
+    c4.metric("Sharpe", f"{p_sharpe:.2f}")
 
-    # التنبيهات (Alerts)
+    # التنبيهات (Alert Grid)
     st.markdown("---")
     st.subheader("Moat Alerts")
-    alert_names = ['Aramco', 'stc', 'BSF', 'Luberef', 'HMG']
-    cols = st.columns(len(alert_names))
-    for i, name in enumerate(alert_names):
+    watch_list = ['Aramco', 'stc', 'BSF', 'Luberef', 'HMG']
+    cols = st.columns(5)
+    for i, name in enumerate(watch_list):
         price = assets_data[name].iloc[-1]
-        ticker_id = [k for k, v in mapping.items() if v == name][0]
-        target = moat_assets[ticker_id]['target']
+        t_id = [k for k,v in mapping.items() if v==name][0]
+        target = moat_assets[t_id]['target']
         with cols[i]:
             if price <= target:
                 st.error(f"🚨 BUY: {name}")
                 if st.button(f"Notify {name}", key=name):
                     msg = f"*Archer Alert* 🎯\nAsset: {name}\nPrice: {price:.2f}\nTarget: {target:.2f}"
-                    send_telegram(msg, user_id)
+                    send_telegram(msg, tg_id)
                     st.toast("Sent!")
             else:
                 st.markdown(f'<div class="blue-card"><strong>✅ {name}</strong><br>Price: {price:.2f}</div>', unsafe_allow_html=True)
 
-    # الجداول والرسوم
+    # الرسوم البيانية
     st.markdown("---")
-    col_left, col_right = st.columns([1, 2])
-    with col_left:
-        st.subheader("Allocation")
-        alloc = [{"Asset": n, "Weight": f"{w:.2%}"} for n, w in clean_weights.items() if w > 0]
-        st.table(pd.DataFrame(alloc))
-    with col_right:
-        st.subheader("Performance vs TASI")
-        p_daily = assets_data.pct_change().dropna().dot(np.array([clean_weights.get(c, 0) for c in assets_data.columns]))
-        st.line_chart(pd.DataFrame({'Portfolio': (1 + p_daily).cumprod(), 'TASI': (1 + tasi_data.pct_change().dropna()).cumprod()}))
+    p_daily = assets_data.pct_change().dropna().dot(np.array([clean_weights.get(c, 0) for c in assets_data.columns]))
+    st.line_chart(pd.DataFrame({'Portfolio': (1 + p_daily).cumprod(), 'TASI': (1 + tasi_data.pct_change().dropna()).cumprod()}))
 else:
-    st.warning("⚠️ Market data unavailable. Please check internet connection or refresh.")
+    # في حال استمرار المشكلة (غالباً بسبب اتصال السيرفر بـ Yahoo Finance)
+    st.error("⚠️ Connection Error: Yahoo Finance is not responding. Please try again in 5 minutes.")
